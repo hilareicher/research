@@ -1,0 +1,22 @@
+[
+    {
+        "doc_id": "doc1",
+        "orig_name": "הילה רייכר",
+        "replace_name":  "שרון"
+    },
+    {
+        "doc_id": "doc2",
+        "orig_name": "משה כהן",
+        "replace_name":  "יוסי"
+    },
+    {
+        "doc_id": "doc3",
+        "orig_name": "גדעון לבנה",
+        "replace_name":  "משה"
+    },
+    {
+        "doc_id": "doc3",
+        "orig_name": "רחל לבנה",
+        "replace_name":  "רחלי"
+    }
+]
