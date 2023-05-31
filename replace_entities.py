@@ -52,4 +52,5 @@ replace_entities_in_response()
 
 # save response with replaced entities
 save_to_file(response, "response_with_replacements.json")
+print("saved anonymized docs, file: response_with_replacements.json")
 print("done")
