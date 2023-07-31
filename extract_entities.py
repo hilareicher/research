@@ -42,21 +42,28 @@ def create_request_body():
 
 # get list of file names in input dir
 def load_input_files(input_dir):
-    return list(pathlib.Path(input_dir).glob('*'))
+    files = list(pathlib.Path(input_dir).glob('*'))
+    files.remove(pathlib.Path(input_dir).joinpath('response.json'))
+    files.remove(pathlib.Path(input_dir).joinpath('entities.csv'))
+    return files
 
 
 # save response to file
 def save_json_response_to_file(filename):
-    with open(filename, 'w', encoding='utf-8') as file:
+    response_file = os.path.join(input_dir, filename)
+    with open(response_file, 'w', encoding='utf-8') as file:
         file.write(json.dumps(response, indent=4, sort_keys=True, ensure_ascii=False))
+    print("saved Safe Harbor response, file: " + response_file)
 
 
 def save_entities_as_csv(filename):
-    with open(filename, 'w') as csvfile:
+    entities_file = os.path.join(input_dir, filename)
+    with open(entities_file, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter=',')
         writer.writerow(['doc_id', 'original', 'type', 'replacement'])
         for entity in entities:
             writer.writerow([entity["doc_id"], entity["original"], entity["type"], None])
+    print("saved identified entities, file: " + entities_file)
 
 
 # load input files
@@ -70,10 +77,8 @@ body = create_request_body()
 endpoint = os.environ.get('SAFE_HARBOR_ENDPOINT', "http://127.0.0.1:8000/query")
 response = send_request_to_server()
 save_json_response_to_file("response.json")
-print("saved Safe Harbor response, file: response.json")
 
 # extract entities from response and save to file
 entities = extract_entities()
 save_entities_as_csv("entities.csv")
-print("saved identified entities, file: entities.csv")
 print("done")
