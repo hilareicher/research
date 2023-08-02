@@ -43,8 +43,10 @@ def create_request_body():
 # get list of file names in input dir
 def load_input_files(input_dir):
     files = list(pathlib.Path(input_dir).glob('*'))
-    files.remove(pathlib.Path(input_dir).joinpath('response.json'))
-    files.remove(pathlib.Path(input_dir).joinpath('entities.csv'))
+    if pathlib.Path(input_dir).joinpath('response.json') in files:
+        files.remove(pathlib.Path(input_dir).joinpath('response.json'))
+    if pathlib.Path(input_dir).joinpath('entities.csv') in files:
+        files.remove(pathlib.Path(input_dir).joinpath('entities.csv'))
     return files
 
 
