@@ -11,7 +11,7 @@ def extract_entities():
                 items = doc["items"]
                 for item in items:
                     #  if "textEntityType" in item and item["textEntityType"] == "PERS":
-                    ann = {"doc_id": doc["id"], "original": item["text"], "type": item["textEntityType"]}
+                    ann = {"doc_id": doc["id"], "textStartPosition" : item["textStartPosition"], "original": item["text"], "type": item["textEntityType"]}
                     doc_names.append(ann)
         return doc_names
 
@@ -33,6 +33,7 @@ def create_request_body():
     arr = []
     for f in files:
         with open(f, 'r') as file:
+            print(f.name)
             text = file.read()
             obj = {"id": f.name, "text": text}
             arr.append(obj)
@@ -62,9 +63,10 @@ def save_entities_as_csv(filename):
     entities_file = os.path.join(input_dir, filename)
     with open(entities_file, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter=',')
-        writer.writerow(['doc_id', 'original', 'type', 'replacement'])
+        writer.writerow(['doc_id', 'startPosition', 'original', 'type', 'replacement'])
         for entity in entities:
-            writer.writerow([entity["doc_id"], entity["original"], entity["type"], None])
+            print(entity)
+            writer.writerow([entity["doc_id"], entity["textStartPosition"],entity["original"], entity["type"], None])
     print("saved identified entities, file: " + entities_file)
 
 
