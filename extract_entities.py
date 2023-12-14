@@ -65,7 +65,6 @@ def save_entities_as_csv(filename):
         writer = csv.writer(csvfile, delimiter=',')
         writer.writerow(['doc_id', 'startPosition', 'original', 'type', 'replacement'])
         for entity in entities:
-            print(entity)
             writer.writerow([entity["doc_id"], entity["textStartPosition"],entity["original"], entity["type"], None])
     print("saved identified entities, file: " + entities_file)
 
