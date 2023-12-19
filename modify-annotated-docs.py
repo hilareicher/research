@@ -6,7 +6,6 @@ import os
 import zipfile
 from cassis import *
 
-
 # In addition, the script will perform three additional tasks:
 # 1) remove <_יום> tags
 # 2) replace <_קשר> tags with a random number of 10 digits
@@ -39,6 +38,12 @@ def parse_replacements_file():
     return replacements
 
 
+def apply_replacements(text, replacements_map):
+    for orig_value in replacements_map:
+        text = text.replace(orig_value, replacements_map[orig_value])
+    return text
+
+
 project_dir = os.environ['INCEPTION_PROJECT_DIR']
 if not os.path.isdir(project_dir):
     print("Error: INCEPTION_PROJECT_DIR is not a directory")
@@ -51,11 +56,6 @@ print("loading INCEpTION project directory, path: " + project_dir)
 replacements_file = os.environ['REPLACEMENTS_FILE']
 replacements = parse_replacements_file()
 print("replacements file contains " + str(len(replacements)) + " document ids")
-print("adding <_יום> and <_קשר> tags to replacements map")
-for doc_id in replacements:
-    replacements[doc_id]["<_יום>"] = ""
-    replacements[doc_id]["<_קשר>"] = "1234567890"
-    replacements[doc_id]["**"] = ""
 
 # under 'annotation' directory in the project directory there should
 # be a directory for each doc_id
@@ -63,21 +63,22 @@ annotation_dir = os.path.join(project_dir, "annotation")
 if not os.path.isdir(annotation_dir):
     print("Error: annotation directory not found in project directory")
     exit(1)
-skipped_docs = 0
 
+# add documents that are present in the annotation directory but not in the replacements file
+for doc_id in os.listdir(annotation_dir):
+    if doc_id not in replacements:
+        replacements[doc_id] = {}
 
-def apply_replacements(text, replacements_map):
-    for orig_value in replacements_map:
-        text = text.replace(orig_value, replacements_map[orig_value])
-    return text
-
+for doc_id in replacements:
+    replacements[doc_id]["<_יום>"] = ""
+    replacements[doc_id]["<_קשר>"] = "1234567890"
+    replacements[doc_id]["**"] = ""
 
 for doc_id in replacements:
     doc_dir = os.path.join(annotation_dir, doc_id)
     if not os.path.isdir(doc_dir):
         print(
             "Error: directory " + doc_id + " not found under the project's annotation directory, skipping document...")
-        skipped_docs += 1
         continue
 
     # each annotating user should have a zip file with the name: <username>.zip,
@@ -90,7 +91,6 @@ for doc_id in replacements:
     canonical_zip_file = os.path.join(doc_dir, "INITIAL_CAS.zip")
     if not os.path.isfile(canonical_zip_file):
         print("Error: INITIAL_CAS.zip not found in document directory " + doc_dir + ", skipping document...")
-        skipped_docs += 1
         continue
     with zipfile.ZipFile(canonical_zip_file, 'r') as zip_ref:
         zip_ref.extractall(doc_dir + "/INITIAL_CAS")
@@ -100,7 +100,6 @@ for doc_id in replacements:
     xml_file = os.path.join(doc_dir, "INITIAL_CAS", "TypeSystem.xml")
     if not os.path.isfile(xmi_file):
         print("Error: INITIAL_CAS.xmi not found in document directory " + doc_dir + ", skipping document...")
-        skipped_docs += 1
         continue
     print("loading XMI file: " + xmi_file)
     with open(xml_file, 'rb') as f:
@@ -111,8 +110,6 @@ for doc_id in replacements:
     # modify the text
     text = cas.sofa_string
     for current_value in replacements[doc_id]:
-        print("replacing " + current_value + " with " + replacements[doc_id][
-            current_value] + " in document " + doc_id + " for INITIAL_CAS")
         replacement_value = replacements[doc_id][current_value]
         text = text.replace(current_value, replacement_value)
     cas.sofa_string = text
@@ -164,7 +161,9 @@ for doc_id in replacements:
                 annotation_begin = modified_text.find(expected_modified_text)
                 annotation_end = annotation_begin + len(expected_modified_text)
                 # if the annotation text was found, re-define the annotation
-                print("replacing " + original_annotation_text + " with " + modified_text[annotation_begin:annotation_end] + " in document " + doc_id + " for annotator " + annotator[:-4])
+                print("replacing " + original_annotation_text + " with " + modified_text[
+                                                                           annotation_begin:annotation_end] + " in document " + doc_id + " for annotator " + annotator[
+                                                                                                                                                             :-4])
                 if annotation_begin != -1:
                     annotation.begin = annotation_begin
                     annotation.end = annotation_end
