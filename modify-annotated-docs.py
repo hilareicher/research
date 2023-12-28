@@ -28,9 +28,9 @@ def parse_replacements_file(f):
     replacements = {}
     replacements_list = load_csv_from_file(f)
     for line in replacements_list:
-        doc_id = line[0]
-        current_value = line[1]
-        replacement_value = line[2]
+        doc_id = line[0].strip()
+        current_value = line[1].strip()
+        replacement_value = line[2].strip()
         if doc_id not in replacements:
             replacements[doc_id] = {}
         replacements[doc_id][current_value] = replacement_value
@@ -70,8 +70,8 @@ for dir_name in os.listdir(annotation_dir):
         replacements[doc_id] = {}
 print("found " + str(len(replacements)) + " document ids in annotation directory")
 for doc_id in replacements:
-    replacements[doc_id]["<_יום>"] = ""
-    replacements[doc_id]["<_קשר>"] = "1234567890"
+    replacements[doc_id]["&lt;_יום&gt"] = ""
+    replacements[doc_id]["&lt;_קשר&gt"] = "1234567890"
     replacements[doc_id]["**"] = ""
 
 for doc_id in replacements:
