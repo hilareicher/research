@@ -78,7 +78,7 @@ for doc_id in replacements:
     doc_dir = os.path.join(annotation_dir, doc_id + ".txt")
     if not os.path.isdir(doc_dir):
         print(
-            "Error: directory " + doc_id + " not found under the project's annotation directory, skipping document...")
+            "Error: directory " + doc_dir + " not found under the project's annotation directory, skipping document...")
         continue
 
     # each annotating user should have a zip file, and inside the zip an XMI file with the name: <username>.xmi
@@ -109,7 +109,7 @@ for doc_id in replacements:
                 typesystem = load_typesystem(f)
             with open(xmi_file, 'rb') as f:
                 cas = load_cas_from_xmi(f, typesystem=typesystem)
-
+            annotator_username = os.path.basename(xmi_file)
             # modify the text and shift annotations
             modified_text = cas.sofa_string
             for current_value in replacements[doc_id]:
@@ -117,29 +117,35 @@ for doc_id in replacements:
                 modified_text = modified_text.replace(current_value, replacement_value)
 
             original_text = cas.sofa_string
-            # go over annotations of type "webanno.custom.General" and re-define them according to the new text
 
-            for annotation in cas.select("webanno.custom.General"):
-                # get the annotation text
-                original_annotation_text = original_text[annotation.begin:annotation.end]
-                expected_modified_text = apply_replacements(original_annotation_text, replacements[doc_id])
-                # find the modified annotation text in the modified text
-                annotation_begin = modified_text.find(expected_modified_text)
-                annotation_end = annotation_begin + len(expected_modified_text)
-                # if the annotation text was found, re-define the annotation
-                #print("replacing " + original_annotation_text + " with " + modified_text[
-                #                                                           annotation_begin:annotation_end] + " in document " + doc_id + " for annotator " + xmi_file[
-                #                                                                                                                                             :-4])
-                if annotation_begin != -1:
-                    annotation.begin = annotation_begin
-                    annotation.end = annotation_end
+            # we loop over annotation types defined in the type system:
+            for t in typesystem.get_types():
+                if 'custom' in t.name:  # we are just interested in the custom annotation types
+                    type_annotations = cas.select(t.name)
+                    if len(type_annotations) == 0:
+                        continue
+                    print ("processing annotation type: " + t.name + " with " + str(len(cas.select(t.name))) + " annotations in document " + doc_id + " for annotator " + annotator_username)
+                    for annotation in type_annotations:
+                        # get the annotation text
+                        original_annotation_text = original_text[annotation.begin:annotation.end]
+                        expected_modified_text = apply_replacements(original_annotation_text, replacements[doc_id])
+                        # find the modified annotation text in the modified text
+                        annotation_begin = modified_text.find(expected_modified_text)
+                        annotation_end = annotation_begin + len(expected_modified_text)
+                        # if the annotation text was found, re-define the annotation
+                        #print("replacing " + original_annotation_text + " with " + modified_text[
+                        #                                                           annotation_begin:annotation_end] + " in document " + doc_id + " for annotator " + xmi_file[
+                        #                                                                                                                                             :-4])
+                        if annotation_begin != -1:
+                            annotation.begin = annotation_begin
+                            annotation.end = annotation_end
 
-                else:
-                    print("Error: annotation text not found in modified text, skipping annotation...")
-                    continue
+                        else:
+                            print("Error: annotation text not found in modified text, skipping annotation...")
+                            continue
 
             cas.sofa_string = modified_text
             # # write the modified XMI file to <username>_MODIFIED.xmi
             xmi_file_modified = os.path.join(annotator_dir, xmi_file[:-4] + "_MODIFIED.xmi")
             print("writing modified XMI file: " + xmi_file_modified)
-            cas.to_xmi(xmi_file_modified)
+            cas.to_xmi(xmi_file_modified, pretty_print=True)
