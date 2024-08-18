@@ -1,3 +1,5 @@
+** Instructions should be updated **
+
 <h2>Instructions</h2>
 1. Set environment vars: EMR_INPUT_DIR and SAFE_HARBOR_ENDPOINT, e.g.,
 
