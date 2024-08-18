@@ -53,6 +53,9 @@ def parse_date(date_str):
 def get_shift_for_patient(patient_id):
     # consistent random shift based on the patient id
     seed = hash_patient_id(patient_id) % (7 + 7 + 1) - 7  # Ensure the seed is within -7 to +7 range
+    # ensure the seed is not zero
+    if seed == 0:
+        seed = 1 if hash_patient_id(patient_id) % 2 == 0 else -1
     return seed
 
 
@@ -72,16 +75,21 @@ def get_date_replacement(date_str, patient_id, mask_operator):
             date_container = extract_date_components(date_str)
             # in case that the components extraction failed, all values will be none - returning the original text
             if date_container.day is None and date_container.month is None and date_container.year is None:
-                return "Date format not supported"
-
+                # Date format not supported
+                return date_str
+            # if only year, return year as is
+            if date_container.day is None and date_container.month is None:
+                return date_container.year.text
             shift_days = get_shift_for_patient(patient_id)
             shifted_date = shift_date(date_container, shift_days)
             # print (f"patient id: {patient_id}, date: {date_str}, shift: {shift_days}, shifted date: {shifted_date}")
             if shifted_date is None:
-                return "Date format is not numerical"
+                # Date format is not numerical
+                return date_str
             return shifted_date.strftime("%d.%m.%Y")
         except:
-            return "Error while trying to replace date: " + date_str
+             print ("Error while trying to replace date: " + date_str)
+             return date_str
 
     # birth dates
     elif mask_operator == "replace_day_month":

@@ -87,6 +87,8 @@ def extract_annotations(cas):
             annotations.append((fs.begin, fs.end, fs.label, tokens_cnt))
     # remove duplicates
     annotations = list(set(annotations))
+    # sort annotation by start position treated as integers
+    annotations = sorted(annotations, key=lambda x: int(x[0]))
     return annotations
 
 
@@ -100,7 +102,7 @@ if not os.path.isdir(inception_dir):
 print("loading INCEpTION directory, path: " + inception_dir)
 
 # load typesystem file
-xml_file = os.path.join(".", "TypeSystem.xml")
+xml_file = os.path.join("..", "TypeSystem.xml")
 if not os.path.isfile(xml_file):
     print("Error: TypeSystem.xml file not found in INCEpTION directory")
     exit(1)
@@ -279,6 +281,7 @@ print(f"f1 agreement: {str(f1_agreement_score_ab)} ,iou_threshold: {iou_threshol
 # print curation agreement
 print(f"kappa for curation user with annotator a: {str(kappa_agreement_score_ac)} ,iou_threshold: {iou_threshold}")
 print(f"kappa for curation user with annotator b: {str(kappa_agreement_score_bc)} ,iou_threshold: {iou_threshold}")
+
 print(f"f1 agreement for curation user with annotator a: {str(f1_agreement_score_ac)} ,iou_threshold: {iou_threshold}")
 print(f"f1 agreement for curation user with annotator b: {str(f1_agreement_score_bc)} ,iou_threshold: {iou_threshold}")
 

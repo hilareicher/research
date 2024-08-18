@@ -15,12 +15,6 @@ NAME_SPACE_UIMA_TCAS = "uima" + NAMESPACE_SEPARATOR + "tcas"
 UIMA_TCAS_PREFIX = NAME_SPACE_UIMA_TCAS + NAMESPACE_SEPARATOR
 TYPE_NAME_ANNOTATION = UIMA_TCAS_PREFIX + "Annotation"
 
-# tokens to remove
-tokens_remove = ["*",
-                 "קשר",
-                 "יום",
-                 "<", ">", "_"]
-
 
 # In addition, the script will perform three additional tasks:
 # 1) remove <_יום> tags
@@ -55,32 +49,78 @@ def parse_replacements_file(f):
 
 
 def apply_replacements(text, replacements_map):
-    for orig_value in replacements_map:
-        text = selective_replace(text, orig_value, replacements_map[orig_value])
-    return text
+    result_text = ""
+    change_list = [0] * (len(text) + 1)
+    current_index = 0
+
+    # Collect and apply replacements
+    changes = []
+    for target, repl in replacements_map.items():
+        for match in re.finditer(re.escape(target), text):
+            start, end = match.start(), match.end()
+            # Check if target is surrounded by ** and replacement is not surrounded by **
+            if start >= 2 and text[start - 2:start] == "**" and end <= len(text) - 2 and text[end:end + 2] == "**":
+                if "**" in target:
+                    changes.append((start, end, repl))
+            else:
+                changes.append((start, end, repl))
+    changes.sort()
+
+    for start, end, repl in changes:
+        result_text += text[current_index:start] + repl
+        offset_change = len(repl) - (end - start)
+        for i in range(end, len(text) + 1):
+            if i < len(change_list):
+                change_list[i] += offset_change
+        current_index = end
+    result_text += text[current_index:]
+
+    return result_text, change_list
 
 
-def selective_replace(string, target, replacement):
-    pattern = re.escape(target)
-    # Find all matches
-    matches = re.findall(pattern, string)
-    # if more than one match and target is not one of the special generic tasks then notify
-    if len(matches) > 1 and target != "**" and target != "<_קשר>" and target != "<_יום>":
-        print("found " + str(len(matches)) + " matches to replace " + target)
+def remove_patterns(text, annotations, patterns):
+    final_text = ""
+    change_list = [0] * (len(text) + 1)
+    current_index = 0
 
-    replaced_string = re.sub(pattern, replacement, string)
-    return replaced_string
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            start, end = match.start(), match.end()
+            final_text += text[current_index:start]
+            offset_change = -(end - start)
+            for i in range(end, len(text) + 1):
+                if i < len(change_list):
+                    change_list[i] += offset_change
+            current_index = end
+        final_text += text[current_index:]
+        text = final_text
+        final_text = ""
+        current_index = 0
+
+    final_text += text[current_index:]
+    new_annotations = adjust_annotations(annotations, change_list)
+    return final_text, new_annotations
+
+
+def adjust_annotations(annotations, change_list):
+    adjusted_annotations = []
+    for start, end in annotations:
+        new_start = start + change_list[start]
+        new_end = end + (change_list[end] if end < len(change_list) else len(change_list) - 1)
+        adjusted_annotations.append((new_start, new_end))
+    return adjusted_annotations
 
 
 def execute_modification_in_dir(dir_name):
     annotation_dir = os.path.join(project_dir, dir_name)
     if not os.path.isdir(annotation_dir):
-        print("Error: " + dir_name +" directory not found in project directory")
+        print("Error: " + dir_name + " directory not found in project directory")
         exit(1)
 
     global fs
     # add documents that are present in the annotation directory but not in the replacements file
     for dir_name in os.listdir(annotation_dir):
+        dir_name
         doc_id = dir_name[:-4]
         if doc_id not in replacements:
             replacements[doc_id] = {}
@@ -88,7 +128,6 @@ def execute_modification_in_dir(dir_name):
     for doc_id in replacements:
         replacements[doc_id]["<_יום>"] = ""
         replacements[doc_id]["<_קשר>"] = "1234567890"
-        replacements[doc_id]["**"] = ""
     for doc_id in replacements:
         doc_dir = os.path.join(annotation_dir, doc_id + ".txt")
         if not os.path.isdir(doc_dir):
@@ -127,45 +166,50 @@ def execute_modification_in_dir(dir_name):
                     cas = load_cas_from_xmi(f, typesystem=typesystem)
                 annotator_username = os.path.basename(xmi_file)
                 # modify the text and shift annotations
-                modified_text = cas.get_sofa().sofaString
-                modified_text = apply_replacements(modified_text, replacements[doc_id])
+                modified_text, change_list = apply_replacements(cas.get_sofa().sofaString, replacements[doc_id])
+                adjusted_annotations = adjust_annotations(
+                    [(fs.begin, fs.end) for fs in cas._find_all_fs() if
+                     hasattr(fs, "begin") and hasattr(fs, "end") and fs.begin >= 0 and fs.end >= 0],
+                    change_list)
 
-                original_text = cas.get_sofa().sofaString
-                # print length of original text
-
-                for fs in sorted(cas._find_all_fs(), key=lambda a: a.xmiID):
-                    t = fs.type
-                    # check if we have 'begin' and 'end' features
+                # adjust annotations directly using the change_list
+                for fs in cas._find_all_fs():
                     if hasattr(fs, "begin") and hasattr(fs, "end") and fs.begin >= 0 and fs.end >= 0:
-                        original_fs_text = fs.get_covered_text()
-                        expected_modified_text = apply_replacements(original_fs_text, replacements[doc_id])
-                        # find the modified annotation text in the modified text
-                        fs_modified_begin = modified_text.find(expected_modified_text)
-                        fs_modified_end = fs_modified_begin + len(expected_modified_text)
-
-                        # if the text was found, re-define the object's begin and end
-                        # print("replacing " + original_annotation_text + " with " + modified_text[
-                        #                                                           fs_modified_begin:fs_modified_end] + " in document " + doc_id + " for annotator " + xmi_file[
-                        #                                                                                                                                               :-4])
-
-                        if fs_modified_begin != -1:
-                            fs.begin = fs_modified_begin
-                            fs.end = fs_modified_end
-
-                        else:
-                            # if Token type AND one of the chars that are removed: *, _, <, >
-                            if (".Token" in fs.type.name) or "*" in original_fs_text:
-                                cas.remove(fs)
-                                continue
-
-                            print("Error: annotation text not found in modified text, skipping ...")
-                            print(
-                                "For debug: " + "type: " + fs.type.name + ", expected modified text: [" + expected_modified_text + "]")
-                            print("original_fs_text: [" + original_fs_text + "]")
-                            continue
+                        # calculate new begin and end using the change_list
+                        new_begin = fs.begin + change_list[fs.begin] if fs.begin < len(change_list) else fs.begin
+                        new_end = fs.end + change_list[fs.end] if fs.end < len(change_list) else fs.end
+                        fs.begin = new_begin
+                        fs.end = new_end
 
                 # replace sofa string with modified text
                 cas.get_sofa().sofaString = modified_text
+
+                # Remove ** and prefix pattern, and adjust annotations
+                prefix_pattern = r"^.*?:\s{15,}"
+                final_text, final_annotations = remove_patterns(cas.get_sofa().sofaString, adjusted_annotations,
+                                                                [prefix_pattern])
+
+                for fs, (new_begin, new_end) in zip(cas._find_all_fs(), final_annotations):
+                    if hasattr(fs, "begin") and hasattr(fs, "end") and fs.begin >= 0 and fs.end >= 0:
+                        fs.begin = new_begin
+                        fs.end = new_end
+
+                cas.get_sofa().sofaString = final_text
+
+                final_text, final_annotations = remove_patterns(cas.get_sofa().sofaString, final_annotations,
+                                                                [r'\*\*'])
+
+                cas.get_sofa().sofaString = final_text
+                for fs, (new_begin, new_end) in zip(cas._find_all_fs(), final_annotations):
+                    if hasattr(fs, "begin") and hasattr(fs, "end") and fs.begin >= 0 and fs.end >= 0:
+                        fs.begin = new_begin
+                        fs.end = new_end
+
+                # remove fs that have begin and end larger than the text length
+                for fs in cas._find_all_fs():
+                    if hasattr(fs, "begin") and hasattr(fs, "end") and (fs.begin > len(cas.get_sofa().sofaString) or fs.end > len(cas.get_sofa().sofaString)):
+                        print ("removing fs with begin: " + str(fs.begin) + " and end: " + str(fs.end) + " of type " + fs.type.name)
+                        cas.remove(fs)
 
                 # write the modified XMI file to <username>_MODIFIED.xmi
                 xmi_file_modified = os.path.join(annotator_dir, xmi_file[:-4] + "_MODIFIED_" + doc_id + ".xmi")
@@ -178,17 +222,17 @@ if not os.path.isdir(project_dir):
     print("Error: INCEPTION_PROJECT_DIR is not a directory")
     exit(1)
 print("loading INCEpTION project directory, path: " + project_dir)
-# for each doc_id, we search for it in the project directory
-# if found, we modify it according to the replacements file
-# if not found, we skip it
 
 replacements_file = os.environ['REPLACEMENTS_FILE']
 replacements = parse_replacements_file(replacements_file)
 print("replacements file contains " + str(len(replacements)) + " document ids")
-# under 'annotation' directory in the project directory there should
-# be a directory for each doc_id
 
-print ("1# going to modify annotation directory")
+print("1# going to modify annotation directory")
 execute_modification_in_dir("annotation")
-print ("2# going to modify curation directory")
+print("2# going to modify curation directory")
 execute_modification_in_dir("curation")
+
+# -----------
+project_dir = "/Users/hilac"
+replacements_file = os.environ['REPLACEMENTS_FILE']
+replacements = parse_replacements_file(replacements_file)

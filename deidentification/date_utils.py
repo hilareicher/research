@@ -112,9 +112,8 @@ def extract_date_components(text: str) -> DateMention:
 
     # if there are less than 6 characters, it is probably not a date (just a mistake in recognition such as season,
     # scale of pain 3/10, etc.)
-    if len(text) < MIN_DATE_LENGTH:
-        return DateMention()
-
+    # if len(text) < MIN_DATE_LENGTH:
+    #     return DateMention()
     # Go over the different date patterns and search for a match
     pattern_list = [HEB_FULL_DATE_REGEX, HEB_MONTH_YEAR_REGEX, HEB_DAY_MONTH_REGEX,
                     LATIN_DATE_REGEX, EN_DMY_REGEX, EN_MDY_REGEX, EN_YMD_REGEX,
@@ -183,7 +182,14 @@ def extract_numerical_date_components(text: str) -> Optional[DateMention]:
                     month = set_date_mention_component(matched, ind=2)
                     day = set_date_mention_component(matched, ind=1)
             return DateMention(day=day, month=month, year=year, text=text)
-        return None
+
+        # check if str is just a year (4 digits)
+    num_pattern= r"^(\d{4})$"
+    matched = re.search(num_pattern, text)
+    if matched:
+        year = set_date_mention_component(matched, 1)
+        return DateMention(year=year, text=text)
+    return None
 
 
 def is_float(txt: str) -> bool:

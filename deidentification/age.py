@@ -29,6 +29,7 @@ def get_age_entities(text):
     results = []
     for match in matches:
         start_position = match.start(1)  # Start of the captured group
+        end_position = match.end(1)
         matched_text = match.group(1)  # The captured digits
 
         results.append({
@@ -36,6 +37,7 @@ def get_age_entities(text):
             "maskOperator": "ranges",
             "textEntityType": "AGE",
             "textStartPosition": start_position,
+            "textEndPosition": end_position,
             "mask": ""
         })
 
