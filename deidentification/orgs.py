@@ -1,10 +1,12 @@
+import re
+
 import utils
 from utils import starts_with_formative_letters
 import pandas as pd
 import random
 
-lev_hasharon = 'לב השרון'
-lev_hasharon_replacement = 'מוסדנו'
+mazor = 'מזור'
+mazor_replacement = 'מוסדנו'
 
 org_df = pd.DataFrame()
 org_replacements = {}
@@ -12,6 +14,72 @@ org_mapping = {}
 
 
 prefixes = ["מרג", "מרכז לבריאות הנפש", "המרכז הרפואי", "ביח", "ביהח", "בית חולים", "מרכז רפואי", "מרכז לבריאות הנפש", "בית החולים"]
+
+def get_org_replacements():
+    return list(org_replacements.keys())
+
+def get_org():
+    return org_df['org'].str.strip().tolist()
+
+def get_orgs_split():
+    return [org.strip() for sublist in org_df['org'].str.split('/') for org in sublist if org.strip()]
+
+
+def get_place_entities(text):
+    # Get the list of places from get_org()
+    places = [place.strip() for sublist in org_df['org'].str.split('/') for place in sublist]
+    # Create a regex pattern to match any of the places, preceded by optional letters like "ב" or "ל"
+    pattern = r"(?:[בל])?\s*(" + "|".join(re.escape(place) for place in places) + r")"
+    matches = re.finditer(pattern, text)
+    results = []
+    for match in matches:
+        start_position = match.start(1)  # Start of the captured place name
+        end_position = match.end(1)
+        matched_text = match.group(1)  # The captured place name
+
+        results.append({
+            "text": matched_text,
+            "maskOperator": "ranges",
+            "textEntityType": "LOC",
+            "textStartPosition": start_position,
+            "textEndPosition": end_position,
+            "mask": ""
+        })
+
+    return results
+
+
+
+def get_hosp_name(text):
+    # Create the regular expression
+    # text = text.replace('"',"")
+    # text = text.replace('״', '"').replace("''", '"')
+    orgs =  [org.strip() for sublist in org_df['org'].str.split('/') for org in sublist if org.strip()]
+    pattern = r'\b(?:ה|ל|בית חולים|בבית חולים|מבית חולים|מ|ב|ש)?\s*"?\s*(' + "|".join(re.escape(place) for place in orgs) + r')\s*"?\b'    # pattern = r"\b(?:(?:ה|ל|בית חולים|בבית חולים|מבית חולים|מ|ב|ש)?)(" + "|".join(re.escape(place) for place in orgs) + r")\b"
+
+    # pattern = r"\b(?:(?:ה|ל|מ|ב|ש)?)(" + "|".join(re.escape(place) for place in orgs) + r")\b"
+    matches = re.finditer(pattern, text)
+    results = []
+
+    # Iterate over the matches
+    for match in matches:
+        start_position = match.start(1)  # Start of the match
+        end_position = match.end(1)  # End of the match
+        matched_text = match.group(1)  # The matched text
+        if matched_text == 'מזור':
+            continue
+        # Append the relevant data to the results
+        results.append({
+            "text": matched_text,
+            "maskOperator": "ranges",
+            "textEntityType": "ORG",
+            # "textEntityType": "ORG",
+            "textStartPosition": start_position,
+            "textEndPosition": end_position,
+            "mask": ""
+        })
+
+    return results
 
 def load_org_data(filename='./datasets/orgs.csv'):
     global org_df, org_mapping
@@ -34,17 +102,18 @@ def get_org_replacement(org_name):
             "justification": "Exclusion"
         }
 
-    if lev_hasharon in org_name:
-        return {"replacement_value": org_name.replace(lev_hasharon, lev_hasharon_replacement), "justification": "Mask"}
+    if mazor in org_name:
+        return {"replacement_value": org_name.replace(mazor, mazor_replacement), "justification": "Mask"}
 
     adjusted_org_name, removed_formatives_and_prefix = adjust_org_if_needed(org_name)
 
     if adjusted_org_name is None:
-        print(f"name {org_name} not found in names dataset")
+        # print(f"name {org_name} not found in names dataset")
         return {
             "replacement_value": org_name,
         }
 
+        # If the org_name contains '/', take the first part before the '/'
     main_org, org_type = org_mapping[adjusted_org_name]
     if main_org in org_replacements:
         # attach the removed formatives to the replacement
@@ -70,6 +139,8 @@ def is_org_in_mapping(org_name):
 
     if org_name in org_mapping:
         return True
+    if org_name in get_org():
+        return True
 
     adjusted_org_name, _ = adjust_org_if_needed(org_name)
     return adjusted_org_name is not None
@@ -77,6 +148,9 @@ def is_org_in_mapping(org_name):
 
 def adjust_org_if_needed(org_name):
     if org_name in org_mapping:
+        return org_name, ""
+
+    if org_name in get_org():
         return org_name, ""
 
     org_name = org_name.replace('"', '')

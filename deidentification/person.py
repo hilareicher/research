@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 import random
 
@@ -8,6 +10,47 @@ names_df = pd.DataFrame()
 replacements = {}
 
 
+
+
+
+
+# def get_names_entities(text):
+#     # Create the regular expression
+#     names =  [name.strip() for sublist in names_df['Name'].str.split('/') for name in sublist if name.strip()]
+#     pattern = r"(?<!\bDr\.)(?<!\bד\"ר)\b(" + "|".join(re.escape(name) for name in names) + r")(?!\.)\b"
+#     matches = re.finditer(pattern, text)
+#     results = []
+#
+#     # Iterate over the matches
+#     for match in matches:
+#         start_position = match.start(1)  # Start of the match
+#         end_position = match.end(1)  # End of the match
+#         matched_text = match.group(1)  # The matched text
+#
+#         # Check the word before the matched name
+#         if start_position > 0:
+#             word_before = text[:start_position].split()[-1]  # Get the word before the matched name
+#             if word_before in names:
+#                 continue  # Skip if the word before is also a name
+#
+#         # Append the relevant data to the results
+#         results.append({
+#             "text": matched_text,
+#             "maskOperator": "Name list",
+#             "textEntityType": "PER",
+#             "textStartPosition": start_position,
+#             "textEndPosition": end_position,
+#             "mask": ""
+#         })
+#
+#     return results
+
+def get_name_replacements():
+    return list(replacements.keys())
+
+def get_name():
+    return names_df['Name'].str.strip().tolist()
+
 def load_names_data(filename='./datasets/names.csv'):
     global names_df
     names_df = pd.read_csv(filename).sort_values(by=['Name', 'Count'], ascending=[True, False])
@@ -15,6 +58,7 @@ def load_names_data(filename='./datasets/names.csv'):
 
 
 load_names_data()
+
 
 
 def get_name_replacement(name):
@@ -80,7 +124,7 @@ def process_name_part(part):
     adjusted_name, formative_letters = adjust_name_if_needed(part)
 
     if adjusted_name is None:
-        print(f"name {part} not found in names dataset")
+        # print(f"name {part} not found in names dataset")
         return {
             "replacement_value": original_part
         }
@@ -101,7 +145,7 @@ def process_name_part(part):
         ]
 
     if potential_replacements_df.empty:
-        print(f"No unique replacement found for {part}")
+        # print(f"No unique replacement found for {part}")
         return {
             "replacement_value": part,
             "unidentified_subtype": True

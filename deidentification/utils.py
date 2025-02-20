@@ -8,7 +8,7 @@ global exclusion_list
 # load identifying prefixes list
 def load_identifying_prefixes():
     global identifying_prefixes
-    with open("./datasets/identifying_prefix.txt", "r") as file:
+    with open("./datasets/identifying_prefix.txt", "r",encoding='utf-8') as file:
         identifying_prefixes = file.read().splitlines()
 
 
@@ -22,6 +22,7 @@ load_identifying_prefixes()
 load_exclusion_list()
 
 
+
 def remove_punc(name):
     # remove "-" and "|" at the beginning and end of the name
     name = name.strip("-|")
@@ -30,16 +31,37 @@ def remove_punc(name):
     return name
 
 
+# def randomize_characters(input_str):
+#     def random_digit():
+#         return str(random.randint(0, 9))
+#
+#     result = []
+#     for char in input_str:
+#         if char.isdigit() or char.isalpha():
+#             result.append(random_digit())
+#         else:
+#             result.append(char)
+#     return ''.join(result)
+
+import random
+
+
 def randomize_characters(input_str):
-    def random_digit():
-        return str(random.randint(0, 9))
+    def random_digit_exclude(original_digit):
+        new_digit = str(random.randint(0, 9))
+        # If the generated digit is the same as the original, generate again
+        while new_digit == original_digit:
+            new_digit = str(random.randint(0, 9))
+        return new_digit
 
     result = []
     for char in input_str:
-        if char.isdigit() or char.isalpha():
-            result.append(random_digit())
+        if char.isdigit():
+            # Replace digits with a random digit that is different from the original
+            result.append(random_digit_exclude(char))
         else:
-            result.append(char)
+            result.append(char)  # Keep non-digit, non-alpha characters unchanged
+
     return ''.join(result)
 
 

@@ -16,7 +16,7 @@ def add_indicator(entity):
 
 
 def load_csv_from_file(file_path):
-    with open(file_path) as csvfile:
+    with open(file_path,encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         return list(reader)
 
@@ -32,20 +32,44 @@ def save_as_individual_text_files(output_dir, grouped_entities):
 
     docs_saved = 0
     for doc_id, data in grouped_entities.items():
-        file_path = os.path.join(output_dir, doc_id)
+        file_path = os.path.join(output_dir, str(doc_id))
+        clean_title = data["title"].replace('\n', ' ').replace('\r', ' ').strip()  # Remove newlines and extra spaces
         with open(file_path, 'w', encoding='utf-8') as file:
+            ######## add this line : ###########
+            file.write(clean_title + ' ' * 50)
+            ####################################
             file.write(data["new_text"])
         docs_saved += 1
 
-    print(f"Saved {docs_saved} docs")
-
-
 def load_original_texts(input_dir, grouped_entities):
-    for doc_id, data in grouped_entities.items():
-        doc_file_path = os.path.join(input_dir, doc_id)
-        with open(doc_file_path, 'r', encoding='utf-8') as file:
-            original_text = clean_text(file.read())
-            data["original_text"] = original_text
+    # Iterate over all files in the input directory
+    for file_name in os.listdir(input_dir):
+        doc_file_path = os.path.join(input_dir, file_name)
+        if file_name == 'entities.txt' or 'response.json' in file_name:
+            continue
+        # Check if the current file is in grouped_entities
+        if file_name in grouped_entities:
+
+            # If the file is in grouped_entities, process normally
+            with open(doc_file_path, 'r', encoding='utf-8') as file:
+                original_text, title = clean_text(file.read())
+                grouped_entities[file_name]["original_text"] = original_text
+                ######## add this line : ###########
+                grouped_entities[file_name]["title"] = title
+        else:
+            # If the file is not in grouped_entities, still read it and save it as it is
+            with open(doc_file_path, 'r', encoding='utf-8') as file:
+                original_text, title = clean_text(file.read())
+
+                # Create a new entry in grouped_entities for this file
+                grouped_entities[file_name] = {
+                    "original_text": original_text,
+                    "title": title,
+                    "entities": [],  # No entities for this file
+                    "new_text": original_text  # No replacements, keep the original
+                }
+
+    print(f"Processed {len(grouped_entities)} documents.")
 
 
 def replace_entities_in_response(grouped_entities):
@@ -57,16 +81,40 @@ def replace_entities_in_response(grouped_entities):
 
         for entity in data["entities"]:
             if entity["original"] != entity["replacement"]:
+                original = entity["original"]
+                start_pos = int(entity["textStartPosition"])
+                end_pos = start_pos + len(original)
+
+                # Adjust start position if `original` contains a double quote but doesn't end with one
+                if '"' in original and not original.endswith('"'):
+                    end_pos += 1  # Shift start position to the right by 1
+
+                # Adjust end position if `original` contains a double quote but doesn't start with one
+                elif '"' in original and not original.startswith('"'):
+                    start_pos -= 1  # Shift end position to the left by 1
+
                 mask = add_indicator(entity["replacement"])
+
                 replacements.append({
                     "mask": mask,
-                    "textStartPosition": int(entity["textStartPosition"]),
-                    "textEndPosition": int(entity["textStartPosition"]) + len(entity["original"])
+                    "textStartPosition": start_pos,
+                    "textEndPosition": end_pos
                 })
+
+        # for entity in data["entities"]:
+        #     if entity["original"] != entity["replacement"]:
+        #         mask = add_indicator(entity["replacement"])
+        #         replacements.append({
+        #             "mask": mask,
+        #             "textStartPosition": int(entity["textStartPosition"]),
+        #             "textEndPosition": int(entity["textStartPosition"]) + len(entity["original"])
+        #         })
 
         replacements.sort(key=lambda x: -1 * x["textStartPosition"])  # reverse order
 
         for replacement in replacements:
+            if replacement["mask"] == '** **':
+                replacement["mask"] = ""
             start = replacement["textStartPosition"]
             end = replacement["textEndPosition"]
             group_text = group_text[:start] + replacement["mask"] + group_text[end:]
