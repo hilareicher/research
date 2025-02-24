@@ -34,4 +34,3 @@ sympy~=1.12
 Levenshtein~=0.25.0
 jupyter
 dkpro-cassis
-fuzzywuzzy
