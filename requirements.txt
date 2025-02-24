@@ -33,3 +33,4 @@ requests~=2.31.0
 sympy~=1.12
 Levenshtein~=0.25.0
 jupyter
+dkpro-cassis
