@@ -4,6 +4,13 @@ import string
 global identifying_prefixes
 global exclusion_list
 
+HOSPITAL_LEV_HASHARON = "Lev Hasharon"
+HOSPITAL_MAZOR = "Mazor"
+
+HOSPITAL_HEBREW_MAP = {
+    HOSPITAL_LEV_HASHARON: "לב השרון",
+    HOSPITAL_MAZOR: "מזור"
+}
 
 # load identifying prefixes list
 def load_identifying_prefixes():

@@ -31,7 +31,7 @@ def suggest_replacement_for_date(original, patient_id, mask_operator):
 
 # handle names (PER/PERS types)
 
-def suggest_replacement_for_person(original, flag=False,prefixe=None):
+def suggest_replacement_for_person(original, flag=False,prefixe=None, hospital=None):
     original = original.strip()
     # check if name appears in the identifying prefix list, if it does, just mark it with a special indicator
     is_identifying_prefix = original in utils.identifying_prefixes
@@ -43,18 +43,19 @@ def suggest_replacement_for_person(original, flag=False,prefixe=None):
     if name_replacement["replacement_value"] == original and not name_replacement.get("in_exclusion_list", False):
         # check if it's in the organization list, if so then treat it as an organization
         if is_org_in_mapping(original):
-            return suggest_replacement_for_org(original)
+            return suggest_replacement_for_org(original, hospital)
         return {"replacement_value": get_random_name(original), "unidentified_subtype": True,
                 "is_identifying_prefix": is_identifying_prefix, "justification": "Name list"}
     return name_replacement
 
 
-def suggest_replacement_for_org(original, flag=False,prefixe=None):
+def suggest_replacement_for_org(original, flag=False,prefixe=None, hospital = None):
+    print (f"org: {original}")
     original = original.strip()
     # print (f"suggesting replacement for org: {original}")
     # check if city appears in the identifying prefix list, if it does, just mark it with a special indicator
     is_identifying_prefix = original in utils.identifying_prefixes
-    org_replacement = get_org_replacement(original)
+    org_replacement = get_org_replacement(original, hospital)
     org_replacement["is_identifying_prefix"] = is_identifying_prefix
     if prefixe:
         org_replacement["replacement_value"] = prefixe + " " + org_replacement["replacement_value"]
@@ -63,18 +64,18 @@ def suggest_replacement_for_org(original, flag=False,prefixe=None):
         # check if it's in the cities list, if so then treat it as a city
         if city.is_city(original):
             # print (f"org {original} is a city")
-            return suggest_replacement_for_city(original)
+            return suggest_replacement_for_city(original, hospital)
         # print (f"org {original} was not found in the cities list, replacing with generic tag")
         return {"replacement_value": "ארגון", "unidentified_subtype": True,
                 "is_identifying_prefix": is_identifying_prefix, "justification": "Mask"}
     return org_replacement
 
 
-def suggest_replacement_for_city(original, flag=False,prefixe = None):
+def suggest_replacement_for_city(original, hospital, flag=False,prefixe = None):
     original = original.strip()
     # check if city appears in the identifying prefix list, if it does, just mark it with a special indicator
     is_identifying_prefix = original in utils.identifying_prefixes
-    city_replacement = get_city_replacement(original)
+    city_replacement = get_city_replacement(original, hospital)
     if prefixe:
         city_replacement['replacement_value'] = prefixe+" "+city_replacement['replacement_value']
     city_replacement["is_identifying_prefix"] = is_identifying_prefix
@@ -84,7 +85,7 @@ def suggest_replacement_for_city(original, flag=False,prefixe = None):
             "above_population_threshold", False):
         # check if it's in the organization list, if so then treat it as an organization
         if is_org_in_mapping(original):
-            return suggest_replacement_for_org(original)
+            return suggest_replacement_for_org(original, hospital)
         if flag:
             return {"replacement_value":prefixe + get_random_city(original), "unidentified_subtype": True,
                     "is_identifying_prefix": is_identifying_prefix, "justification": "City list"}
@@ -208,7 +209,7 @@ def suggest_replacement_for_partial_date(original, patient_id, cleaned_date):
     return {"replacement_value": replacement_value, "justification": "Date/time format"}
 
 
-def check_city_match(original, threshold=90):
+def check_city_match(original, hospital, threshold=90):
     """
     Check if the given original city name matches any city in the DataFrame
     using fuzzy matching.
@@ -227,7 +228,8 @@ def check_city_match(original, threshold=90):
         removed_prefixe = removed[0]
     cities = city.get_cities()
     best_match, score = process.extractOne(original, cities)
-    if best_match == 'מזור':
+    if best_match == utils.HOSPITAL_HEBREW_MAP[hospital]:
+        print("debug111")
         return True, best_match , removed_prefixe
     # Print the best match and score for debugging
     # print(f"Best match: {best_match}, Score: {score} , Original {original} :" )
@@ -384,7 +386,7 @@ def clean_input(text):
 
     return cleaned_text, removed
 
-def check_org_match(original, threshold=90):
+def check_org_match(original, hospital, threshold=90):
     """
     Check if the given original city name matches any city in the DataFrame
     using fuzzy matching.
@@ -405,7 +407,7 @@ def check_org_match(original, threshold=90):
     #     pass
     cities = orgs.get_orgs_split()
     best_match, score = process.extractOne(text_clean, cities)
-    if best_match == 'מזור' :
+    if best_match == utils.HOSPITAL_HEBREW_MAP[hospital]:
         return True,best_match,removed_prefixe
     # Print the best match and score for debugging
     # print(f"Best match: {best_match}, Score: {score}")
@@ -420,7 +422,7 @@ def check_org_match(original, threshold=90):
     return False, None ,removed_prefixe
 
 
-def handle_city_parts(original):
+def handle_city_parts(original, hospital):
     global SIGN
     """
     Handle cases where a city name arrives in parts (e.g., 'Gan-' and then 'Yavne').
@@ -432,7 +434,7 @@ def handle_city_parts(original):
         str: The full city name if a match is found, or the partial city name.
     """
     # Check if the city matches any in the database
-    score_flag, city_match = check_city_match(original)
+    score_flag, city_match = check_city_match(original, hospital)
 
     if score_flag:
         # Handle the case where the city name has a hyphen ('-') indicating it's incomplete
@@ -479,56 +481,56 @@ def suggest_replacement_for_url(original_url):
     }
 
 
-def suggest_replacement(entity_type, original, doc_id, mask_operator, mask):
+def suggest_replacement(entity_type, original, doc_id, mask_operator, mask, hospital):
     global SIGN
-
     parts = doc_id.split('_')  # e.g., 34341_01_13432_111.txt
     patient_id = parts[0]
     if check_criminal_terms(original, entity_type):
         return False
     if entity_type == 'DATE' or entity_type == 'DATE_TIME' or entity_type == 'LATIN_DATE' or entity_type == 'NOISY_DATE' or entity_type == 'PREPOSITION_DATE':
         return suggest_replacement_for_date(original, patient_id, mask_operator)
+
     if entity_type == 'PERS' or entity_type == 'PER':
         score_flag, org_match,prefix = check_name_match(original)
         if score_flag:
-            return suggest_replacement_for_person(org_match, True,prefix)
+            return suggest_replacement_for_person(org_match, True,prefix, hospital)
         # todo - change1  suggest_replacement_for_person(org_match, True) -> return {"replacement_value": original}
 
         return {"replacement_value": original}
         # return suggest_replacement_for_person(original, True)
     elif entity_type == 'ORG' or entity_type == 'FAC' or entity_type == 'GPE':
-        score_flag, org_match,removed_prefixe = check_org_match(original, threshold=90)
+        score_flag, org_match,removed_prefixe = check_org_match(original, hospital, threshold=90)
         if score_flag:
-            return suggest_replacement_for_org(org_match, True, removed_prefixe)
-        # A= suggest_replacement_for_org(original, True)
+            return suggest_replacement_for_org(org_match, True, removed_prefixe, hospital)
 
-        score_flag, city_match,removed_prefixe = check_city_match(original, threshold=90)
+        score_flag, city_match,removed_prefixe = check_city_match(original, hospital, threshold=90)
         if score_flag:
-            return suggest_replacement_for_city(city_match, True,removed_prefixe)
+            return suggest_replacement_for_city(city_match, hospital, True,removed_prefixe)
         return {"replacement_value": original}
-        #     return suggest_replacement_for_city(org_match,True)
-        # return suggest_replacement_for_org(original)
+
     elif entity_type == 'LOC':
-        score_flag, city_match,removed_prefixe = check_city_match(original)
+        score_flag, city_match,removed_prefixe = check_city_match(original, hospital)
         if score_flag:
             if '-' in original:
-                _ = handle_city_parts(original)
-            return suggest_replacement_for_city(city_match, True,removed_prefixe)
-        score_flag, org_match,removed_prefixe = check_org_match(original)
+                _ = handle_city_parts(original, hospital)
+            return suggest_replacement_for_city(city_match, hospital,True,removed_prefixe)
+
+        score_flag, org_match,removed_prefixe = check_org_match(original, hospital)
         if score_flag:
-            return suggest_replacement_for_org(org_match, True,removed_prefixe)
+            return suggest_replacement_for_org(org_match, True,removed_prefixe, hospital)
+
         return {"replacement_value": original}
 
         # return suggest_replacement_for_org(original,True)
 
     elif entity_type == 'CITY':
         if SIGN:
-            flag = handle_city_parts(original)
+            flag = handle_city_parts(original, hospital)
             if flag:
                 return {"replacement_value": " ", "unidentified_subtype": True}
-        score_flag, city_match,removed_prefixe = check_city_match(original, threshold=95)
+        score_flag, city_match,removed_prefixe = check_city_match(original, hospital, threshold=95)
         if score_flag:
-            return suggest_replacement_for_city(city_match, True)
+            return suggest_replacement_for_city(city_match, hospital,True)
             # return suggest_replacement_for_city(original)
         return {"replacement_value": original}
     elif entity_type == 'COUNTRY':

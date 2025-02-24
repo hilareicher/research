@@ -1,7 +1,8 @@
 {
-  "input_dir": "path/to/your/input_directory",
+  "input_dir": "../data",
   "batch_size": 100,
   "start_file_num": 1,
   "skip_type": null,
-  "endpoint": "http://127.0.0.1:8000/query"
+  "endpoint": "http://127.0.0.1:8000/query",
+  "hospital": "Lev Hasharon"
 }

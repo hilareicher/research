@@ -2,6 +2,8 @@
 import argparse
 import re
 import string
+import traceback
+
 import utils
 
 import requests
@@ -22,6 +24,10 @@ from orgs import get_hosp_name, get_org_replacements
 from partial_date import get_partial_date_entities
 from suggestions import suggest_replacement, clean_input
 
+import warnings
+from urllib3.exceptions import NotOpenSSLWarning
+warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
+
 files_errors = []
 
 CategoryMapping = {
@@ -31,7 +37,7 @@ CategoryMapping = {
 def extract_additional_entities(text):
     try:
         # cities_entities = get_cities_from_text(text)
-        hosp_name = get_hosp_name(text)
+        hosp_name = get_hosp_name(text, hospital)
         criminal_case = get_criminal_case(text)
         age_entities = get_age_entities(text)
         partial_date_entities = get_partial_date_entities(text)
@@ -71,7 +77,7 @@ def check_duplicates(prev_text, current_text):
         return False
 
 
-def extract_and_replace_entities(response, input_dir, skip_type):
+def extract_and_replace_entities(response, input_dir, skip_type, hospital):
     doc_entities = []
     for doc in response.get("docs", []):
         try:
@@ -88,6 +94,7 @@ def extract_and_replace_entities(response, input_dir, skip_type):
             additional_items = extract_additional_entities(text)
             prev_text_info = []
             for item in chain(doc.get("items", []), additional_items):
+
                 if item["text"] in string.punctuation:
                     continue  # Skip this item if it is a punctuation mark
                 if item["text"] == 'בש' and any(
@@ -110,7 +117,7 @@ def extract_and_replace_entities(response, input_dir, skip_type):
                 if meds.check_meds_match(item["text"]):
                     continue
                 replacement = suggest_replacement(item["textEntityType"], item["text"], doc["id"],
-                                                  item["maskOperator"], item["mask"])
+                                                  item["maskOperator"], item["mask"], hospital)
                 if not replacement or replacement['replacement_value'] == item['text']:
                     continue
                 ann = {
@@ -140,6 +147,8 @@ def extract_and_replace_entities(response, input_dir, skip_type):
             # print(f"Entities extracted and replacements suggested for file {doc['id']}.")
             # print(f"***************************************************************.")
         except Exception as e:
+            # print stack trace for debugging
+            traceback.print_exc()
             print(f"Error processing file {doc['id']}: {e}")
     return doc_entities
 
@@ -328,7 +337,7 @@ def save_entities_as_csv(entities, filename):
 #         sys.exit(1)
 
 
-def main(input_dir, endpoint, batch_size=100, start_file_num=1, skip_type=None):
+def main(input_dir, endpoint, batch_size=100, start_file_num=1, skip_type=None, hospital=None):
     global files_errors
     try:
         files = load_input_files(input_dir)
@@ -355,12 +364,14 @@ def main(input_dir, endpoint, batch_size=100, start_file_num=1, skip_type=None):
             # print("********************************************************************************")
 
             body = create_request_body(batch_files)
-            response = send_request_to_server(endpoint, body)
+            # response = send_request_to_server(endpoint, body)
+            # read response from response.json file
+            response = json.load(open("../data/response.json"))
 
             # Save the response and entities for each batch
             save_json_response_to_file(response, pathlib.Path(input_dir, "response.json"))
 
-            entities = extract_and_replace_entities(response, input_dir, skip_type)
+            entities = extract_and_replace_entities(response, input_dir, skip_type, hospital)
             save_entities_as_csv(entities, pathlib.Path(input_dir, "entities.txt"))
             print("********************* Batch completed *************************************")
             print(f"Batch completed. Last file number processed: {last_file_num}\n")
@@ -381,6 +392,19 @@ def load_config(config_file):
         print(f"Error loading configuration file {config_file}: {e}")
         sys.exit(1)
 
+
+def normalize_hospital():
+    global hospital
+    if not hospital or hospital.strip().lower() not in (
+    utils.HOSPITAL_LEV_HASHARON.lower(), utils.HOSPITAL_MAZOR.lower()):
+        raise ValueError(
+            f"The 'hospital' parameter must be either '{utils.HOSPITAL_LEV_HASHARON}' or '{utils.HOSPITAL_MAZOR}'.")
+    if hospital.strip().lower() == utils.HOSPITAL_LEV_HASHARON.lower():
+        hospital = utils.HOSPITAL_LEV_HASHARON
+    else:
+        hospital = utils.HOSPITAL_MAZOR
+
+
 if __name__ == '__main__':
     # either specify the configuration file via an environment variable or default to config.json
     config_file = os.environ.get("CONFIG_FILE", "config.json")
@@ -390,16 +414,23 @@ if __name__ == '__main__':
     input_dir = config.get("input_dir") or os.environ.get('EMR_INPUT_DIR')
     if not input_dir:
         raise ValueError("Input directory must be specified in config or via the EMR_INPUT_DIR environment variable.")
+    # Check if the input directory exists
+    if not os.path.isdir(input_dir):
+        raise ValueError(f"Input directory '{input_dir}' does not exist.")
 
     endpoint = config.get("endpoint", "http://127.0.0.1:8000/query")
     batch_size = config.get("batch_size", 100)
     start_file_num = config.get("start_file_num", 1)
     skip_type = config.get("skip_type", None)
 
+    hospital = config.get("hospital")
+    normalize_hospital()
+
     print("Starting processing with the following parameters:")
     print(f"Input Directory: {input_dir}")
     print(f"Batch Size: {batch_size}")
     print(f"Start File Number: {start_file_num}")
     print(f"Skip Type: {skip_type}")
+    print(f"Hospital: {hospital}")
 
-    main(input_dir, endpoint, batch_size=batch_size, start_file_num=start_file_num, skip_type=skip_type)
+    main(input_dir, endpoint, batch_size=batch_size, start_file_num=start_file_num, skip_type=skip_type, hospital=hospital)
