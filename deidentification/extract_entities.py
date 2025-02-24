@@ -373,33 +373,33 @@ def main(input_dir, endpoint, batch_size=100, start_file_num=1, skip_type=None):
         sys.exit(1)
 
 
+def load_config(config_file):
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading configuration file {config_file}: {e}")
+        sys.exit(1)
+
 if __name__ == '__main__':
-    #### input : input_dir batch_size start_file_num ####
-    parser = argparse.ArgumentParser(description='Process EMR data.')
-    parser.add_argument('input_dir', nargs='?', type=str, help='The EMR input directory')
-    # parser.add_argument('--batch_size', type=int, default=100,
-    #                     help='The number of files to process in each batch (default: 100)')
-    # parser.add_argument('--start_file_num', type=int, default=1,
-    #                     help='The file number to start processing from (default: 1)')
-    parser.add_argument('batch_size', type=int, help='The number of files to process in each batch')
-    parser.add_argument('start_file_num', type=int, help='The file number to start processing from')
-    parser.add_argument('skip_type', type=str, default=None,
-                        help='Specify a data type to skip during processing (default: None)')
+    # either specify the configuration file via an environment variable or default to config.json
+    config_file = os.environ.get("CONFIG_FILE", "config.json")
+    config = load_config(config_file)
 
-    args = parser.parse_args()
-    input_dir = args.input_dir
-    if input_dir is None:
-        input_dir = os.environ.get('EMR_INPUT_DIR')
-    if input_dir is None:
-        raise ValueError(
-            "EMR input directory must be specified either as a command-line argument or through the EMR_INPUT_DIR environment variable.")
+    # Load configuration parameters from a config file
+    input_dir = config.get("input_dir") or os.environ.get('EMR_INPUT_DIR')
+    if not input_dir:
+        raise ValueError("Input directory must be specified in config or via the EMR_INPUT_DIR environment variable.")
 
-    endpoint = os.environ.get('SAFE_HARBOR_ENDPOINT', "http://127.0.0.1:8000/query")
-    print(f"Starting processing with the following parameters:")
+    endpoint = config.get("endpoint", "http://127.0.0.1:8000/query")
+    batch_size = config.get("batch_size", 100)
+    start_file_num = config.get("start_file_num", 1)
+    skip_type = config.get("skip_type", None)
+
+    print("Starting processing with the following parameters:")
     print(f"Input Directory: {input_dir}")
-    print(f"Batch Size: {args.batch_size}")
-    print(f"Start File Number: {args.start_file_num}")
-    if args.skip_type:
-        args.skip_type = None
-        print(f"Skipping Type: {args.skip_type}")
-    main(input_dir, endpoint, batch_size=args.batch_size, start_file_num=args.start_file_num, skip_type=args.skip_type)
+    print(f"Batch Size: {batch_size}")
+    print(f"Start File Number: {start_file_num}")
+    print(f"Skip Type: {skip_type}")
+
+    main(input_dir, endpoint, batch_size=batch_size, start_file_num=start_file_num, skip_type=skip_type)

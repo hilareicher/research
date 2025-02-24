@@ -1,0 +1,7 @@
+{
+  "input_dir": "path/to/your/input_directory",
+  "batch_size": 100,
+  "start_file_num": 1,
+  "skip_type": null,
+  "endpoint": "http://127.0.0.1:8000/query"
+}
