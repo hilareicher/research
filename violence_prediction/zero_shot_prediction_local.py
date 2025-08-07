@@ -130,8 +130,12 @@ if __name__ == "__main__":
     parser.add_argument("--env", choices=["local", "server"], default="local", help="Choose environment: local or server")
     args = parser.parse_args()
 
+    model_id = "mistralai/Mistral-7B-Instruct-v0.2"
+    device = 0
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
+    model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float16).to(device)
+
     if args.env == "server":
-        model_path = "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/lynx-workspace/work/models/Qwen2.5-3B-Instruct"
         text_dirs = [
             "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/Data/Violence-Risk-143856ac/TEXT1-1745402454",
             "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/Data/Violence-Risk-143856ac/TEXT2-1745402454",
@@ -139,9 +143,7 @@ if __name__ == "__main__":
             "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/Data/Violence-Risk-143856ac/TEXT4-1745406168",
             "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/Data/Violence-Risk-143856ac/TEXT5-1745406168",
         ]
-        device = "cuda"
     else:
-        model_path = "/Users/hilac/code/Qwen2.5-3B-Instruct"
         text_dirs = [
             "/Users/hilac/Downloads/mazor/research-main/uploads/TEXT1-1745402454",
             "/Users/hilac/Downloads/mazor/research-main/uploads/TEXT2-1745402454",
@@ -149,9 +151,6 @@ if __name__ == "__main__":
             "/Users/hilac/Downloads/mazor/research-main/uploads/TEXT4-1745406168",
             "/Users/hilac/Downloads/mazor/research-main/uploads/TEXT5-1745406168",
         ]
-        device = "mps"
 
     csv_path = os.path.join(os.path.dirname(__file__), "admission_records.csv")
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True).to(device)
     process_emrs_from_csv(csv_path, text_dirs, tokenizer, model, device)
