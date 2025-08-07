@@ -105,7 +105,7 @@ if __name__ == "__main__":
             "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/Data/Violence-Risk-143856ac/TEXT4-1745406168",
             "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/Data/Violence-Risk-143856ac/TEXT5-1745406168",
         ]
-        model_path = "/home/hilareicher.mail.tau.ac.il/Desktop/local_share/lynx-workspace/work/models/Qwen2.5-3B-Instruct"
+        model_path = "mistralai/Mistral-7B-Instruct-v0.2"
         device = "cuda"
     else:
         metadata_dirs = [
@@ -122,7 +122,7 @@ if __name__ == "__main__":
             "/Users/hilac/Downloads/mazor/research-main/uploads/TEXT4-1745406168",
             "/Users/hilac/Downloads/mazor/research-main/uploads/TEXT5-1745406168",
         ]
-        model_path = "/Users/hilac/code/Qwen2.5-3B-Instruct"
+        model_path = "mistralai/Mistral-7B-Instruct-v0.2"
         device = "mps"
 
     # --- load predictions ---
