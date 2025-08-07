@@ -10,10 +10,10 @@ Do not mention the EMR or reuse any content from it, except a single quoted aggr
 
 This is not a free-form task. Your answer must follow this **exact format** — no deviations:
 ```json
-{
-  "actual": true | false,
-  "justification": "<verbatim snippet or empty>"
-}
+{{
+  "actual": {{true | false}},
+  "justification": "{{<verbatim snippet or empty>}}"
+}}
 ```
 
 Instructions:
