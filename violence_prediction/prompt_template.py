@@ -3,26 +3,28 @@ You are performing a step-by-step analysis of a medical record to detect overt p
 
 Aggression keywords to look for: הכה, הרביץ, דחף, בעט, חבט, זרק, דקר, נשך, חנק, תקף, התנהגות תוקפנית, איים, תקיפה.
 
-**Chain of Thought**:
-1. Carefully scan the EMR text for any of the above keywords indicating physical aggression directed at another person.
-2. Confirm that the context specifically describes aggression toward others (not self-harm or non-violent behavior).
-3. If and only if aggression is clearly present:
-   - set `actual = yes`
-   - extract exactly the verbatim snippet containing the keyword, wrapped in double quotes, and assign it to `justification`.
-4. If there is no aggression present:
-   - set `actual = no`
-   - set `justification = ""` (do NOT supply any snippet).
+You must not repeat, summarize, paraphrase, or explain any part of the EMR.
+Do not generate steps, chain-of-thought, or commentary.
+Do not include any reasoning.
+Do not mention the EMR or reuse any content from it, except a single quoted aggression snippet if applicable.
 
-Very important:
-- Your response must strictly follow the exact format below. No extra commentary or explanation is allowed.
-- You must ALWAYS output a Python code block, exactly as shown below.
-- If there is any uncertainty, default to `actual = no`.
-
-Respond ONLY with the following Python assignments, and nothing else:
+This is not a free-form task. Your answer must follow this **exact format** — no deviations:
 ```python
 actual = <yes/no>
 justification = "<verbatim snippet or empty>"
 ```
+
+Instructions:
+1. Carefully scan the EMR text for any of the above keywords indicating physical aggression directed at another person.
+2. Confirm that the context **clearly** describes **physical aggression toward others** (not self-harm, verbal aggression, or general distress).
+3. If and ONLY if aggression toward others is explicitly confirmed:
+   - Set `actual = yes`
+   - Extract the exact verbatim snippet containing the aggression keyword, **wrapped in double quotes**, and assign it to `justification`.
+4. If there is **any doubt, ambiguity, or no aggression**:
+   - Set `actual = no`
+   - Set `justification = ""` (an empty string — do NOT explain why)
+
+Any output that deviates from the required format will be considered invalid.
 
 EMR:
 {emr_text}
