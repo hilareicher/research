@@ -61,7 +61,7 @@ def parse_yes_no(resp: str) -> str:
         if json_match:
             parsed = json.loads(json_match.group())
             if isinstance(parsed.get("actual"), bool):
-            return True if parsed["actual"] else False
+                return True if parsed["actual"] else False
     except Exception as e:
         print(f"⚠️ JSON parse failed: {e}")
     return "InvalidFormat"
