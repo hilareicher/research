@@ -161,8 +161,8 @@ if __name__ == "__main__":
     model_source = args.model_name if args.model_name else model_path
     print (f"device: {device}, model source: {model_source}")
     # --- prepare LLM ---
-    # Clear CUDA cache if using GPU
-    if device == "cuda":
+    # Clear CUDA cache if available
+    if torch.cuda.is_available():
         torch.cuda.empty_cache()
     tokenizer = AutoTokenizer.from_pretrained(model_source, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(model_source, trust_remote_code=True, torch_dtype=torch.float16).to(device)
@@ -217,6 +217,20 @@ if __name__ == "__main__":
                 emr_text = f.read()
             print(f"EMR size for {txt_fn}: {len(emr_text)} characters")
             timers['read'] += time.time() - t0
+
+            # --- Skip if EMR text is too long ---
+            if len(emr_text) > 3000:
+                print(f"Skipping {txt_fn} because EMR size is too large ({len(emr_text)} chars)")
+                results.append({
+                    "DEMOG_REC_ID": demog,
+                    "ADMISSION_FILE": txt_fn,
+                    "PREDICTION": pred_label,
+                    "ACTUAL": "TooLong",
+                    "ACTUAL_FILE": path,
+                    "JUSTIFICATION": "",
+                    "CONTENT": emr_text
+                })
+                continue
 
             # --- Profile prompt construction ---
             t0 = time.time()
@@ -279,11 +293,11 @@ if __name__ == "__main__":
     no_count = sum(r["ACTUAL"] is False for r in results)
     print(f"Saved {len(results)} rows to {out_path} — actual violence=True: {yes_count}, False: {no_count}")
 
-    # שמור קבצים שלא קיבלו תשובה בפורמט תקני
-    invalids_df = pd.DataFrame([r for r in results if r["ACTUAL"] == "InvalidFormat"])
+    # שמור קבצים שלא קיבלו תשובה בפורמט תקני או שהיו ארוכים מדי
+    invalids_df = pd.DataFrame([r for r in results if r["ACTUAL"] in ["InvalidFormat", "TooLong"]])
     invalids_path = os.path.join(results_dir, "invalid_format_responses.csv")
     invalids_df.to_csv(invalids_path, index=False)
-    print(f"\n⚠️ Saved {len(invalids_df)} responses with invalid format to {invalids_path}")
+    print(f"\n⚠️ Saved {len(invalids_df)} responses with invalid format or too long to {invalids_path}")
 
     # --- label distribution ---
     import json

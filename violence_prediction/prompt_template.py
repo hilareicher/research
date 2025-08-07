@@ -8,7 +8,7 @@ Do not generate steps, chain-of-thought, or commentary.
 Do not include any reasoning.
 Do not mention the EMR or reuse any content from it, except a single quoted aggression snippet if applicable.
 
-This is not a free-form task. Your answer must follow this **exact format** — no deviations:
+This is not a free-form task. Your answer must strictly follow this **exact format** — no deviations, no explanations, no extra output. Any deviation (including repetition, commentary, or formatting mistakes) will immediately invalidate the response and trigger a rejection. You are being evaluated solely on compliance with this JSON structure:
 ```json
 {{
   "actual": {{true | false}},
@@ -26,7 +26,7 @@ Instructions:
    - Set `actual = false`
    - Set `justification = ""` (an empty string — do NOT explain why)
 
-Any output that deviates from the required format will be considered invalid.
+Repeating or paraphrasing the EMR content, failing to follow the JSON format exactly, or including any explanation will be treated as an invalid response.
 
 EMR:
 {emr_text}
