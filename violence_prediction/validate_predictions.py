@@ -2,6 +2,8 @@
 import os
 import pandas as pd
 import argparse
+
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 import re
 import time
@@ -149,10 +151,10 @@ if __name__ == "__main__":
 
     # allow overriding the local model with a HF hub model name
     model_source = args.model_name if args.model_name else model_path
-
+    print (f"device: {device}, model source: {model_source}")
     # --- prepare LLM ---
     tokenizer = AutoTokenizer.from_pretrained(model_source, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(model_source, trust_remote_code=True).to(device)
+    model = AutoModelForCausalLM.from_pretrained(model_source, trust_remote_code=True, torch_dtype=torch.float16).to(device)
     gen_pipeline = pipeline(
         "text-generation",
         model=model,
@@ -217,7 +219,7 @@ if __name__ == "__main__":
             # --- Profile generation ---
             t0 = time.time()
             # generate only the continuation without prompt echo
-            raw = gen_pipeline(prompt, max_new_tokens=150)[0]["generated_text"]
+            raw = gen_pipeline(prompt, max_new_tokens=100)[0]["generated_text"]
             print (f"Raw response for {txt_fn}:\n{raw}\n")
             timers['generate'] += time.time() - t0
 
