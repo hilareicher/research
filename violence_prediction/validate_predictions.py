@@ -8,6 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 import re
 import time
 import sys
+import json
 
 # --- Tee class for logging to both console and file ---
 class Tee:
@@ -53,10 +54,17 @@ from sklearn.metrics import precision_recall_fscore_support
 
 def parse_yes_no(resp: str) -> str:
     """
-    Extracts the 'yes' or 'no' assignment from the model output.
+    Extracts the boolean 'actual' field from the model output in JSON format.
     """
-    match = re.search(r'actual\s*=\s*["\']?(yes|no)["\']?', resp, re.IGNORECASE)
-    return match.group(1).lower() if match else ""
+    try:
+        json_match = re.search(r'{.*}', resp, re.DOTALL)
+        if json_match:
+            parsed = json.loads(json_match.group())
+            if isinstance(parsed.get("actual"), bool):
+            return True if parsed["actual"] else False
+    except Exception as e:
+        print(f"⚠️ JSON parse failed: {e}")
+    return "InvalidFormat"
 
 def parse_justification(resp: str) -> str:
     """
@@ -188,7 +196,7 @@ if __name__ == "__main__":
         other_files = other_meta["FILENAME"].unique().tolist()
         if args.env == "local":
             other_files = other_files[:30]
-        actual = "No"
+        actual = False
         actual_file = ""
         justification = ""
         violent_text = ""
@@ -230,8 +238,8 @@ if __name__ == "__main__":
             timers['parse'] += time.time() - t0
 
             print(f"actual label for {txt_fn} is {resp_label}")
-            if resp_label == 'yes':
-                actual = "Yes"
+            if resp_label is True:
+                actual = True
                 actual_file = path
                 # extract justification snippet from the EMR text directly
                 justification = resp_just
@@ -239,29 +247,39 @@ if __name__ == "__main__":
                 print (f"Justification for {txt_fn}: {justification}")
                 timers['misc'] += time.time() - t0_overall_iteration_start
                 break
+            elif resp_label is False:
+                actual = False
 
             # Account for misc time for this iteration if we didn't break
             timers['misc'] += time.time() - t0_overall_iteration_start
 
-        results.append({
-            "DEMOG_REC_ID": demog,
-            "ADMISSION_FILE": adm_fn + ".txt",
-            "PREDICTION": pred_label,
-            "ACTUAL": actual,
-            "ACTUAL_FILE": actual_file or "N/A",
-            "JUSTIFICATION": justification,
-            "CONTENT": violent_text
-        })
+    results.append({
+        "DEMOG_REC_ID": demog,
+        "ADMISSION_FILE": adm_fn + ".txt",
+        "PREDICTION": pred_label,
+        "ACTUAL": actual if resp_label != "InvalidFormat" else "InvalidFormat",
+        "ACTUAL_FILE": actual_file or "N/A",
+        "JUSTIFICATION": justification,
+        "CONTENT": violent_text
+    })
 
     # --- write out ---
     out_path = os.path.join(results_dir, "validation_results.csv")
     # write main results including actual file and justification
     results_df = pd.DataFrame(results)
     results_df = results_df[["DEMOG_REC_ID", "ADMISSION_FILE", "PREDICTION", "ACTUAL", "ACTUAL_FILE", "JUSTIFICATION"]]
+    # Convert ACTUAL to boolean dtype where possible, leave "InvalidFormat" as is
+    results_df["ACTUAL"] = results_df["ACTUAL"].astype("boolean")
     results_df.to_csv(out_path, index=False)
-    yes_count = sum(r["ACTUAL"] == "Yes" for r in results)
-    no_count = len(results) - yes_count
-    print(f"Saved {len(results)} rows to {out_path} — actual violence=Yes: {yes_count}, No: {no_count}")
+    yes_count = sum(r["ACTUAL"] is True for r in results)
+    no_count = sum(r["ACTUAL"] is False for r in results)
+    print(f"Saved {len(results)} rows to {out_path} — actual violence=True: {yes_count}, False: {no_count}")
+
+    # שמור קבצים שלא קיבלו תשובה בפורמט תקני
+    invalids_df = pd.DataFrame([r for r in results if r["ACTUAL"] == "InvalidFormat"])
+    invalids_path = os.path.join(results_dir, "invalid_format_responses.csv")
+    invalids_df.to_csv(invalids_path, index=False)
+    print(f"\n⚠️ Saved {len(invalids_df)} responses with invalid format to {invalids_path}")
 
     # --- label distribution ---
     import json
@@ -270,7 +288,7 @@ if __name__ == "__main__":
     pred_dist.columns = ["Label", "Count"]
     pred_dist_path = os.path.join(results_dir, "label_distribution_predictions.csv")
     pred_dist.to_csv(pred_dist_path, index=False)
-    actual_dist = results_df["ACTUAL"].value_counts().reset_index()
+    actual_dist = results_df["ACTUAL"].value_counts(dropna=False).reset_index()
     actual_dist.columns = ["Label", "Count"]
     actual_dist_path = os.path.join(results_dir, "label_distribution_actual.csv")
     actual_dist.to_csv(actual_dist_path, index=False)
@@ -285,7 +303,7 @@ if __name__ == "__main__":
         print(f"Warning: {missing_count} predictions missing, excluding from metrics.")
     metrics_df = metrics_df.dropna(subset=["PREDICTION"])
     # map actual labels to binary
-    y_true = metrics_df["ACTUAL"].map({"Yes": 1, "No": 0})
+    y_true = metrics_df["ACTUAL"].astype("boolean").astype("int")
     # convert likelihood labels to binary predictions (only "High" counts as positive)
     pred_map = {"High": 1, "Medium": 0, "Low": 0}
     y_pred = metrics_df["PREDICTION"].map(pred_map)
