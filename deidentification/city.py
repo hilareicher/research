@@ -3,8 +3,8 @@ import re
 import pandas as pd
 
 import utils
-
-replacement = 'מוסדנו'
+mazor = 'מזור'
+mazor_replacement = 'מוסדנו'
 
 df = pd.read_csv('./datasets/cities.csv', encoding='utf-8')
 
@@ -14,20 +14,19 @@ df['סה"כ'] = df['סה"כ'].apply(lambda x: int(x.replace(",", "")))
 
 
 
-def get_cities_from_text(text, hospital):
+def get_cities_from_text(text):
     # Create the regular expression
     orgs = [org.strip() for sublist in df['שם_ישוב'].str.split('/') for org in sublist if org.strip()]
     pattern = r"\b(?:(?:ה|ל|מ|ב|ש)?)(" + "|".join(re.escape(place) for place in orgs) + r")\b"
     matches = re.finditer(pattern, text)
     results = []
-    expected_hospital_hebrew = utils.HOSPITAL_HEBREW_MAP[hospital]
 
     # Iterate over the matches
     for match in matches:
         start_position = match.start(1)  # Start of the match
         end_position = match.end(1)  # End of the match
         matched_text = match.group(1)  # The matched text
-        if matched_text == expected_hospital_hebrew:
+        if matched_text == 'מזור':
             continue
         # Append the relevant data to the results
         results.append({
@@ -48,7 +47,7 @@ def get_selected_cities():
 def get_cities():
     return df['שם_ישוב'].str.strip().tolist()
 
-def get_city_replacement(city_name, hospital, population_threshold=50000000):
+def get_city_replacement(city_name, population_threshold=50000000):
     # global selected_cities
     # print (f"city_name: {city_name}")
     if city_name in utils.exclusion_list:
@@ -59,12 +58,8 @@ def get_city_replacement(city_name, hospital, population_threshold=50000000):
             "justification": "Exclusion"
         }
 
-    hospital_hebrew = utils.HOSPITAL_HEBREW_MAP.get(hospital)
-    if hospital_hebrew in city_name:
-        return {
-            "replacement_value": city_name.replace(hospital_hebrew, replacement),
-            "justification": "Mask"
-        }
+    if mazor in city_name:
+        return {"replacement_value": city_name.replace(mazor, mazor_replacement), "justification": "Mask"}
 
     if city_name in ['תל-אביב', 'תל אביב', 'ת"א', 'תל אביב יפו', 'תל-אביב יפו']:
         return  {"replacement_value": city_name, "above_population_threshold":True, "justification":"Large City"} # all forms of Tel Aviv, should not be replaced

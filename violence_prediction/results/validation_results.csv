@@ -1,0 +1,6 @@
+DEMOG_REC_ID,ADMISSION_FILE,PREDICTION,ACTUAL,ACTUAL_FILE,JUSTIFICATION
+1181,Job15_1181_15.txt,High,Yes,/Users/hilac/Downloads/mazor/research-main/uploads/TEXT2-1745402454/Job15_1181_16.txt,"""נצבת התנהגות תוקפנית פיזית ולא צפויה כלפי הסובבים."""
+1420,Job15_1420_6.txt,Medium,Yes,/Users/hilac/Downloads/mazor/research-main/uploads/TEXT3-1745406167/Job15_1420_2482.txt,"""איים להכות"""
+1803,Job15_1803_16.txt,Low,No,N/A,
+2630,Job15_2630_35.txt,High,Yes,/Users/hilac/Downloads/mazor/research-main/uploads/TEXT5-1745406168/Job15_2630_49.txt,"'""מתחבר למשטרה בשל פגיעה בפר"
+3963,Job15_3963_9.txt,Low,Yes,/Users/hilac/Downloads/mazor/research-main/uploads/TEXT5-1745406168/Job15_3963_1268.txt,"""הכה אשתו בשר ודם על הרצפה,"""

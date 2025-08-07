@@ -5,7 +5,8 @@ from utils import starts_with_formative_letters
 import pandas as pd
 import random
 
-replacement = 'מוסדנו'
+mazor = 'מזור'
+mazor_replacement = 'מוסדנו'
 
 org_df = pd.DataFrame()
 org_replacements = {}
@@ -49,7 +50,7 @@ def get_place_entities(text):
 
 
 
-def get_hosp_name(text, hospital):
+def get_hosp_name(text):
     # Create the regular expression
     # text = text.replace('"',"")
     # text = text.replace('״', '"').replace("''", '"')
@@ -59,14 +60,13 @@ def get_hosp_name(text, hospital):
     # pattern = r"\b(?:(?:ה|ל|מ|ב|ש)?)(" + "|".join(re.escape(place) for place in orgs) + r")\b"
     matches = re.finditer(pattern, text)
     results = []
-    expected_hospital_hebrew = utils.HOSPITAL_HEBREW_MAP[hospital]
 
     # Iterate over the matches
     for match in matches:
         start_position = match.start(1)  # Start of the match
         end_position = match.end(1)  # End of the match
         matched_text = match.group(1)  # The matched text
-        if matched_text == expected_hospital_hebrew:
+        if matched_text == 'מזור':
             continue
         # Append the relevant data to the results
         results.append({
@@ -92,19 +92,18 @@ def load_org_data(filename='./datasets/orgs.csv'):
             org_mapping[org.strip()] = (main_org, org_type)
 
 
-def get_org_replacement(org_name, hospital):
+def get_org_replacement(org_name):
     global org_mapping, org_replacements
-    print (f"org_name: {org_name}")
+
     if org_name in utils.exclusion_list:
         return {
             "replacement_value": org_name,
             "in_exclusion_list": True,
             "justification": "Exclusion"
         }
-    expected_hospital_hebrew = utils.HOSPITAL_HEBREW_MAP.get(hospital)
 
-    if expected_hospital_hebrew in org_name:
-        return {"replacement_value": org_name.replace(expected_hospital_hebrew, replacement), "justification": "Mask"}
+    if mazor in org_name:
+        return {"replacement_value": org_name.replace(mazor, mazor_replacement), "justification": "Mask"}
 
     adjusted_org_name, removed_formatives_and_prefix = adjust_org_if_needed(org_name)
 
