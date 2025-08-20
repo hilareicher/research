@@ -36,12 +36,6 @@ timers = {
 from tqdm import tqdm
 from prompt_template import CHECK_PROMPT_TEMPLATE
 
-# Aggression keywords for rule-based filtering
-AGG_KEYWORDS = [
-    "הכה", "הרביץ", "דחף", "בעט", "חבט", "זרק", "דקר",
-    "נשך", "חנק", "תקף", "התנהגות תוקפנית", "איים", "תקיפה"
-]
-
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -58,13 +52,18 @@ def parse_yes_no(resp: str) -> str:
     Extracts the boolean 'actual' field from the model output in JSON format.
     """
     try:
-        json_match = re.search(r'{.*}', resp, re.DOTALL)
+        # Look for JSON object with optional whitespace and comments
+        json_match = re.search(r'\{[^}]*"actual":\s*(true|false)[^}]*\}', resp, re.IGNORECASE | re.DOTALL)
         if json_match:
-            parsed = json.loads(json_match.group())
+            # Clean up any trailing commas or comments before parsing
+            json_str = re.sub(r'//.*$', '', json_match.group(), flags=re.MULTILINE)
+            json_str = re.sub(r',(\s*})', r'\1', json_str)
+            parsed = json.loads(json_str)
             if isinstance(parsed.get("actual"), bool):
-                return True if parsed["actual"] else False
+                return parsed["actual"]
     except Exception as e:
         print(f"⚠️ JSON parse failed: {e}")
+        print(f"Raw response was: {resp}")
     return "InvalidFormat"
 
 def parse_justification(resp: str) -> str:
@@ -162,9 +161,7 @@ if __name__ == "__main__":
     model_source = args.model_name if args.model_name else model_path
     print (f"device: {device}, model source: {model_source}")
     # --- prepare LLM ---
-    # Clear CUDA cache and run garbage collection before loading model
-    # if torch.cuda.is_available():
-    #     torch.cuda.empty_cache()
+    # Run garbage collection before loading model
     gc.collect()
 
     print(f"Loading model from {model_source}...")
@@ -175,21 +172,18 @@ if __name__ == "__main__":
         torch_dtype=torch.float16,
         device_map="auto",  # Better device management
         low_cpu_mem_usage=True  # Reduce memory usage during loading
-    ).to(device)
+    )
 
     gen_pipeline = pipeline(
         "text-generation",
         model=model,
         tokenizer=tokenizer,
-        device=0 if device == "cuda" else -1,
         return_full_text=False,
     )
 
     results = []
     for _, row in tqdm(preds_df.iterrows(), total=len(preds_df), desc="Admissions"):
-        # Clear memory at the start of each major iteration
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        # Run garbage collection at the start of each major iteration
         gc.collect()
 
         demog = row["DEMOG_REC_ID"]
@@ -220,11 +214,6 @@ if __name__ == "__main__":
         justification = ""
         violent_text = ""
         for fn in tqdm(other_files, desc=f"Checking files for {demog}", leave=False):
-            # # Clear memory at the start of each file processing
-            # if torch.cuda.is_available():
-            #     torch.cuda.empty_cache()
-            # gc.collect()
-
             txt_fn = fn + ".txt"
             print (f"Checking {txt_fn} for DEMOG_REC_ID {demog}...")
             path = next((os.path.join(td, txt_fn) for td in text_dirs if os.path.exists(os.path.join(td, txt_fn))), None)
@@ -269,17 +258,15 @@ if __name__ == "__main__":
             print(f"Raw response for {txt_fn}:\n{raw}\n")
             timers['generate'] += time.time() - t0
 
-            # Free memory after generation
-            del raw
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-
             # --- Profile parsing ---
             t0 = time.time()
             resp_label = parse_yes_no(raw)
             resp_just = parse_justification(raw)
             timers['parse'] += time.time() - t0
+
+            # Free memory after we're done with the raw response
+            del raw
+            gc.collect()
 
             print(f"actual label for {txt_fn} is {resp_label}")
             if resp_label is True:
