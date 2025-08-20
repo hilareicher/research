@@ -4,10 +4,10 @@ CHECK_PROMPT_TEMPLATE = """
 Below is a medical record that needs to be analyzed for overt physical aggression toward others. Your task is to return a JSON object indicating whether there is clear evidence of physical violence directed at another person, following the EXACT structure specified.
 
 REQUIRED OUTPUT FORMAT:
-{
+{{
   "actual": boolean,    // must be exactly true or false, no quotes
   "justification": ""   // must be exactly "", or a quoted string if violence found
-}
+}}
 
 STRICT RULES:
 1. You MUST output ONLY the JSON object above
