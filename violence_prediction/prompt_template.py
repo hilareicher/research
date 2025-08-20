@@ -1,33 +1,34 @@
 CHECK_PROMPT_TEMPLATE = """
-You are performing a step-by-step analysis of a medical record to detect overt physical aggression toward others. This task requires strict attention to identifying **actual physical violence directed at other persons**, and not any other forms of aggression or distress.
+[SYSTEM: You are an API that MUST return ONLY valid JSON. No other text, explanations, or commentary is allowed]
 
-Aggression keywords to look for (only when describing **physical violence against others**): הכה, הרביץ, דחף, בעט, חבט, זרק, דקר, נשך, חנק, תקף, התנהגות תוקפנית, איים, תקיפה.
+Below is a medical record that needs to be analyzed for overt physical aggression toward others. Your task is to return a JSON object indicating whether there is clear evidence of physical violence directed at another person, following the EXACT structure specified.
 
-You must not repeat, summarize, paraphrase, or explain any part of the EMR.
-Do not generate steps, chain-of-thought, or commentary.
-Do not include any reasoning.
-Do not mention the EMR or reuse any content from it, except a single quoted aggression snippet if applicable.
+REQUIRED OUTPUT FORMAT:
+{
+  "actual": boolean,    // must be exactly true or false, no quotes
+  "justification": ""   // must be exactly "", or a quoted string if violence found
+}
 
-This is not a free-form task. Your answer must strictly follow this **exact format** — no deviations, no explanations, no extra output. Any deviation (including repetition, commentary, or formatting mistakes) will immediately invalidate the response and trigger a rejection. You are being evaluated solely on compliance with this JSON structure:
-```json
-{{
-  "actual": {{true | false}},
-  "justification": "{{<verbatim snippet or empty>}}"
-}}
-```
+STRICT RULES:
+1. You MUST output ONLY the JSON object above
+2. No explanations, no commentary, no other text
+3. No HTML, no markdown, no code blocks
+4. The "actual" field MUST be a boolean (true/false), not a string
+5. The "justification" field MUST be either an empty string or a quoted snippet
+6. Do not repeat or explain the EMR content
+7. ANY deviation from this format will cause rejection
 
-Instructions:
-1. Carefully scan the EMR text for any of the above keywords indicating physical aggression directed at another person.
-2. Confirm that the context **clearly** describes **actual physical aggression toward others** (not threats, not verbal aggression, not self-harm, not general agitation or emotional distress). If it's not unambiguous physical violence directed at another person, mark it as `false`.
-3. If and ONLY if aggression toward others is explicitly confirmed:
-   - Set `actual = true`
-   - Extract the exact verbatim snippet containing the aggression keyword, **wrapped in double quotes**, and assign it to `justification`.
-4. If there is **any doubt, ambiguity, or no aggression**:
-   - Set `actual = false`
-   - Set `justification = ""` (an empty string — do NOT explain why)
+Keywords indicating physical aggression (only when describing actual violence against others):
+הכה, הרביץ, דחף, בעט, חבט, זרק, דקר, נשך, חנק, תקף, התנהגות תוקפנית, איים, תקיפה
 
-Repeating or paraphrasing the EMR content, failing to follow the JSON format exactly, or including any explanation will be treated as an invalid response.
+DECISION LOGIC:
+- Set actual=true ONLY if there is unambiguous physical violence against others
+- Set actual=false for threats, verbal aggression, self-harm, or general agitation
+- When actual=true, justification must contain the exact violence snippet
+- When actual=false, justification must be an empty string
 
-EMR:
+EMR TEXT:
 {emr_text}
+
+[SYSTEM: Remember - return ONLY the JSON object. No other output is allowed.]
 """
