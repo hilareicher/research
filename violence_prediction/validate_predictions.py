@@ -358,83 +358,147 @@ if __name__ == "__main__":
     print(f"Actual label distribution saved to {actual_dist_path}")
 
     # --- compute validation metrics ---
-    metrics_df = pd.read_csv(out_path)
+    try:
+        metrics_df = pd.read_csv(out_path)
+        print(f"\nStarting metrics computation with {len(metrics_df)} total samples")
+        print(f"Initial ACTUAL value counts:\n{metrics_df['ACTUAL'].value_counts(dropna=False)}")
 
-    # First, filter out any non-boolean values (TooLong, InvalidFormat)
-    valid_responses = ~metrics_df["ACTUAL"].isin(["TooLong", "InvalidFormat"])
-    metrics_df = metrics_df[valid_responses]
+        # First, filter out any non-boolean values (TooLong, InvalidFormat)
+        valid_responses = ~metrics_df["ACTUAL"].isin(["TooLong", "InvalidFormat"])
+        metrics_df = metrics_df[valid_responses]
+        print(f"After removing special values: {len(metrics_df)} samples")
 
-    # drop rows with missing predictions
-    missing_count = metrics_df["PREDICTION"].isna().sum()
-    if missing_count > 0:
-        print(f"Warning: {missing_count} predictions missing, excluding from metrics.")
-    metrics_df = metrics_df.dropna(subset=["PREDICTION"])
+        # drop rows with missing predictions or NaN values
+        metrics_df = metrics_df.dropna(subset=["PREDICTION", "ACTUAL"])
+        missing_count = len(valid_responses) - len(metrics_df)
+        if missing_count > 0:
+            print(f"Warning: {missing_count} predictions missing or invalid, excluding from metrics.")
 
-    # Convert ACTUAL to numeric (True=1, False=0)
-    # Since we filtered out special values, we can safely convert to bool then int
-    y_true = metrics_df["ACTUAL"].map({True: 1, False: 0})
+        # Convert ACTUAL to numeric (True=1, False=0) handling string representations
+        def convert_to_binary(val):
+            """Convert various boolean representations to binary (0/1) values"""
+            try:
+                if pd.isna(val):
+                    return None
+                if isinstance(val, bool):
+                    return 1 if val else 0
+                if isinstance(val, (int, float)):
+                    if val == 1:
+                        return 1
+                    if val == 0:
+                        return 0
+                    return None
+                if isinstance(val, str):
+                    val_lower = val.lower().strip()
+                    if val_lower in ('true', 'yes', '1', 't', 'y', 'true.0', '1.0'):
+                        return 1
+                    if val_lower in ('false', 'no', '0', 'f', 'n', 'false.0', '0.0'):
+                        return 0
+                return None
+            except Exception as e:
+                print(f"Warning: Error converting value '{val}' ({type(val)}): {str(e)}")
+                return None
 
-    # convert likelihood labels to binary predictions (only "High" counts as positive)
-    pred_map = {"High": 1, "Medium": 0, "Low": 0}
-    y_pred = metrics_df["PREDICTION"].map(pred_map)
+        y_true = metrics_df["ACTUAL"].apply(convert_to_binary)
+        print(f"After binary conversion: {len(y_true)} samples")
+        print(f"Binary value counts:\n{y_true.value_counts(dropna=False)}")
 
-    # drop any rows where prediction remains unmapped
-    missing_pred = y_pred.isna().sum()
-    if missing_pred > 0:
-        print(f"Warning: {missing_pred} rows with unmapped PREDICTION values, excluding from metrics.")
-        valid = y_pred.notna()
-        y_true = y_true[valid]
-        y_pred = y_pred[valid]
+        # Remove any rows where conversion failed (resulted in None/NaN)
+        valid_true = y_true.notna()
+        y_true = y_true[valid_true]
+        metrics_df = metrics_df[valid_true]
 
-    # Only compute metrics if we have valid data
-    if len(y_true) > 0 and len(y_pred) > 0:
-        acc = accuracy_score(y_true, y_pred)
-        prec = precision_score(y_true, y_pred, zero_division=0)
-        rec = recall_score(y_true, y_pred, zero_division=0)
-        f1 = f1_score(y_true, y_pred, zero_division=0)
-        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-        spec = tn / (tn + fp) if (tn + fp) > 0 else 0
-        mcc = matthews_corrcoef(y_true, y_pred)
+        # convert likelihood labels to binary predictions (only "High" counts as positive)
+        pred_map = {"High": 1, "Medium": 0, "Low": 0}
+        y_pred = metrics_df["PREDICTION"].map(pred_map)
+        print(f"Prediction value counts:\n{y_pred.value_counts(dropna=False)}")
 
-        print("\nValidation Metrics:")
-        print(f"  Total valid samples: {len(y_true)}")
-        print(f"  Accuracy   : {acc:.3f}")
-        print(f"  Precision  : {prec:.3f}")
-        print(f"  Recall     : {rec:.3f}")
-        print(f"  Specificity: {spec:.3f}")
-        print(f"  F1 Score   : {f1:.3f}")
-        print(f"  MCC        : {mcc:.3f}")
+        # drop any rows where prediction remains unmapped
+        valid_pred = y_pred.notna()
+        y_true = y_true[valid_pred]
+        y_pred = y_pred[valid_pred]
+        missing_pred = (~valid_pred).sum()
+        if missing_pred > 0:
+            print(f"Warning: {missing_pred} rows with unmapped PREDICTION values, excluding from metrics.")
 
-        # --- save metrics to CSV ---
-        metrics_dict = {
-            "Total_Samples": len(y_true),
-            "Accuracy": acc,
-            "Precision": prec,
-            "Recall": rec,
-            "Specificity": spec,
-            "F1 Score": f1,
-            "MCC": mcc,
-            "TN": tn,
-            "FP": fp,
-            "FN": fn,
-            "TP": tp
-        }
-        metrics_df = pd.DataFrame([metrics_dict])
-        metrics_csv_path = os.path.join(results_dir, "validation_metrics.csv")
-        metrics_df.to_csv(metrics_csv_path, index=False)
-        print(f"Validation metrics saved to {metrics_csv_path}")
-        print("\nConfusion Matrix:")
-        print(f"  TN={tn}  FP={fp}")
-        print(f"  FN={fn}  TP={tp}")
-        print("\nClassification Report:")
-        # Print single binary precision/recall/f1
-        prfs = precision_recall_fscore_support(y_true, y_pred, average='binary', zero_division=0)
-        precision_bin, recall_bin, f1_bin, _ = prfs
-        print(f"Precision (binary): {precision_bin:.3f}")
-        print(f"Recall (binary)   : {recall_bin:.3f}")
-        print(f"F1 Score (binary) : {f1_bin:.3f}")
-    else:
-        print("\nWarning: No valid samples for computing metrics")
+        # Final validation before computing metrics
+        if len(y_true) != len(y_pred):
+            raise ValueError(f"Mismatch in lengths: y_true({len(y_true)}) != y_pred({len(y_pred)})")
+
+        # Verify we have both positive and negative samples
+        n_pos = (y_true == 1).sum()
+        n_neg = (y_true == 0).sum()
+        print(f"\nFinal dataset composition:")
+        print(f"Positive samples: {n_pos}")
+        print(f"Negative samples: {n_neg}")
+
+        # Only compute metrics if we have valid data
+        if len(y_true) > 0 and len(y_pred) > 0 and n_pos + n_neg == len(y_true):
+            print(f"\nComputing metrics on {len(y_true)} valid samples...")
+
+            # Convert to numpy arrays for sklearn
+            y_true_arr = np.array(y_true, dtype=int)
+            y_pred_arr = np.array(y_pred, dtype=int)
+
+            acc = accuracy_score(y_true_arr, y_pred_arr)
+            prec = precision_score(y_true_arr, y_pred_arr, zero_division=0)
+            rec = recall_score(y_true_arr, y_pred_arr, zero_division=0)
+            f1 = f1_score(y_true_arr, y_pred_arr, zero_division=0)
+            tn, fp, fn, tp = confusion_matrix(y_true_arr, y_pred_arr).ravel()
+            spec = tn / (tn + fp) if (tn + fp) > 0 else 0
+            mcc = matthews_corrcoef(y_true_arr, y_pred_arr)
+
+            print("\nValidation Metrics:")
+            print(f"  Total valid samples: {len(y_true)}")
+            print(f"  Accuracy   : {acc:.3f}")
+            print(f"  Precision  : {prec:.3f}")
+            print(f"  Recall     : {rec:.3f}")
+            print(f"  Specificity: {spec:.3f}")
+            print(f"  F1 Score   : {f1:.3f}")
+            print(f"  MCC        : {mcc:.3f}")
+
+            # --- save metrics to CSV ---
+            metrics_dict = {
+                "Total_Samples": len(y_true),
+                "Positive_Samples": n_pos,
+                "Negative_Samples": n_neg,
+                "Accuracy": acc,
+                "Precision": prec,
+                "Recall": rec,
+                "Specificity": spec,
+                "F1_Score": f1,
+                "MCC": mcc,
+                "TN": tn,
+                "FP": fp,
+                "FN": fn,
+                "TP": tp
+            }
+            metrics_df = pd.DataFrame([metrics_dict])
+            metrics_csv_path = os.path.join(results_dir, "validation_metrics.csv")
+            metrics_df.to_csv(metrics_csv_path, index=False)
+            print(f"Validation metrics saved to {metrics_csv_path}")
+            print("\nConfusion Matrix:")
+            print(f"  TN={tn}  FP={fp}")
+            print(f"  FN={fn}  TP={tp}")
+            print("\nClassification Report:")
+            # Print single binary precision/recall/f1
+            prfs = precision_recall_fscore_support(y_true_arr, y_pred_arr, average='binary', zero_division=0)
+            precision_bin, recall_bin, f1_bin, _ = prfs
+            print(f"Precision (binary): {precision_bin:.3f}")
+            print(f"Recall (binary)   : {recall_bin:.3f}")
+            print(f"F1 Score (binary) : {f1_bin:.3f}")
+        else:
+            print("\nWarning: Invalid or insufficient data for computing metrics")
+            print(f"Total samples: {len(y_true)}")
+            print(f"Positive samples: {n_pos}")
+            print(f"Negative samples: {n_neg}")
+
+    except Exception as e:
+        print(f"\nError during metrics computation: {str(e)}")
+        print("Traceback:")
+        import traceback
+        traceback.print_exc()
+
     print(f"Total run time: {time.time() - start_time:.2f} seconds")
     print("\n🕒 Profiling Timers:")
     for name, val in timers.items():
