@@ -49,6 +49,7 @@ from sklearn.metrics import precision_recall_fscore_support
 def parse_yes_no(resp: str) -> str:
     """
     Extracts the boolean 'actual' field from the model output in JSON format.
+    Handles various forms of true/false values.
     """
     try:
         # Look for JSON object with optional whitespace and comments
@@ -57,9 +58,23 @@ def parse_yes_no(resp: str) -> str:
             # Clean up any trailing commas or comments before parsing
             json_str = re.sub(r'//.*$', '', json_match.group(), flags=re.MULTILINE)
             json_str = re.sub(r',(\s*})', r'\1', json_str)
+
+            # Handle case variations before parsing
+            json_str = re.sub(r':\s*true\s*([,}])', r':true\1', json_str, flags=re.IGNORECASE)
+            json_str = re.sub(r':\s*false\s*([,}])', r':false\1', json_str, flags=re.IGNORECASE)
+
             parsed = json.loads(json_str)
-            if isinstance(parsed.get("actual"), bool):
-                return parsed["actual"]
+            actual_val = parsed.get("actual")
+
+            # Handle both boolean and string representations
+            if isinstance(actual_val, bool):
+                return actual_val
+            elif isinstance(actual_val, str):
+                val_lower = actual_val.lower()
+                if val_lower in ('true', 'yes', '1'):
+                    return True
+                elif val_lower in ('false', 'no', '0'):
+                    return False
     except Exception as e:
         print(f"⚠️ JSON parse failed: {e}")
         print(f"Raw response was: {resp}")
@@ -224,7 +239,7 @@ if __name__ == "__main__":
             timers['read'] += time.time() - t0
 
             # --- Skip if EMR text is too long ---
-            if len(emr_text) > 2000:
+            if len(emr_text) > 3000:
                 print(f"Skipping {txt_fn} because EMR size is too large ({len(emr_text)} chars)")
                 results.append({
                     "DEMOG_REC_ID": demog,
@@ -297,10 +312,20 @@ if __name__ == "__main__":
 
     # Handle boolean conversion more carefully
     def convert_to_boolean(val):
+        """
+        Converts various true/false representations to proper boolean values.
+        Preserves special string values like TooLong and InvalidFormat.
+        """
         if isinstance(val, bool):
             return val
-        elif isinstance(val, str) and val in ["TooLong", "InvalidFormat"]:
-            return val
+        elif isinstance(val, str):
+            if val in ["TooLong", "InvalidFormat"]:
+                return val
+            val_lower = val.lower()
+            if val_lower in ('true', 'yes', '1', 't', 'y'):
+                return True
+            elif val_lower in ('false', 'no', '0', 'f', 'n'):
+                return False
         return None
 
     # Convert values one by one using the safe converter
@@ -334,13 +359,21 @@ if __name__ == "__main__":
 
     # --- compute validation metrics ---
     metrics_df = pd.read_csv(out_path)
+
+    # First, filter out any non-boolean values (TooLong, InvalidFormat)
+    valid_responses = ~metrics_df["ACTUAL"].isin(["TooLong", "InvalidFormat"])
+    metrics_df = metrics_df[valid_responses]
+
     # drop rows with missing predictions
     missing_count = metrics_df["PREDICTION"].isna().sum()
     if missing_count > 0:
         print(f"Warning: {missing_count} predictions missing, excluding from metrics.")
     metrics_df = metrics_df.dropna(subset=["PREDICTION"])
-    # map actual labels to binary
-    y_true = metrics_df["ACTUAL"].astype("boolean").astype("int")
+
+    # Convert ACTUAL to numeric (True=1, False=0)
+    # Since we filtered out special values, we can safely convert to bool then int
+    y_true = metrics_df["ACTUAL"].map({True: 1, False: 0})
+
     # convert likelihood labels to binary predictions (only "High" counts as positive)
     pred_map = {"High": 1, "Medium": 0, "Low": 0}
     y_pred = metrics_df["PREDICTION"].map(pred_map)
@@ -353,49 +386,55 @@ if __name__ == "__main__":
         y_true = y_true[valid]
         y_pred = y_pred[valid]
 
-    acc = accuracy_score(y_true, y_pred)
-    prec = precision_score(y_true, y_pred, zero_division=0)
-    rec = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-    spec = tn / (tn + fp) if (tn + fp) > 0 else 0
-    mcc = matthews_corrcoef(y_true, y_pred)
+    # Only compute metrics if we have valid data
+    if len(y_true) > 0 and len(y_pred) > 0:
+        acc = accuracy_score(y_true, y_pred)
+        prec = precision_score(y_true, y_pred, zero_division=0)
+        rec = recall_score(y_true, y_pred, zero_division=0)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+        spec = tn / (tn + fp) if (tn + fp) > 0 else 0
+        mcc = matthews_corrcoef(y_true, y_pred)
 
-    print("\nValidation Metrics:")
-    print(f"  Accuracy   : {acc:.3f}")
-    print(f"  Precision  : {prec:.3f}")
-    print(f"  Recall     : {rec:.3f}")
-    print(f"  Specificity: {spec:.3f}")
-    print(f"  F1 Score   : {f1:.3f}")
-    print(f"  MCC        : {mcc:.3f}")
+        print("\nValidation Metrics:")
+        print(f"  Total valid samples: {len(y_true)}")
+        print(f"  Accuracy   : {acc:.3f}")
+        print(f"  Precision  : {prec:.3f}")
+        print(f"  Recall     : {rec:.3f}")
+        print(f"  Specificity: {spec:.3f}")
+        print(f"  F1 Score   : {f1:.3f}")
+        print(f"  MCC        : {mcc:.3f}")
 
-    # --- save metrics to CSV ---
-    metrics_dict = {
-        "Accuracy": acc,
-        "Precision": prec,
-        "Recall": rec,
-        "Specificity": spec,
-        "F1 Score": f1,
-        "MCC": mcc,
-        "TN": tn,
-        "FP": fp,
-        "FN": fn,
-        "TP": tp
-    }
-    metrics_df = pd.DataFrame([metrics_dict])
-    metrics_csv_path = os.path.join(results_dir, "validation_metrics.csv")
-    metrics_df.to_csv(metrics_csv_path, index=False)
-    print(f"Validation metrics saved to {metrics_csv_path}")
-    print("\nConfusion Matrix:")
-    print(f"  TN={tn}  FP={fp}")
-    print(f"  FN={fn}  TP={tp}")
-    print("\nClassification Report:")
-    # Print single binary precision/recall/f1
-    prfs = precision_recall_fscore_support(y_true, y_pred, average='binary', zero_division=0)
-    precision_bin, recall_bin, f1_bin, _ = prfs
-    print(f"Precision (binary): {precision_bin:.3f}")
-    print(f"Recall (binary)   : {recall_bin:.3f}")
-    print(f"F1 Score (binary) : {f1_bin:.3f}")
+        # --- save metrics to CSV ---
+        metrics_dict = {
+            "Total_Samples": len(y_true),
+            "Accuracy": acc,
+            "Precision": prec,
+            "Recall": rec,
+            "Specificity": spec,
+            "F1 Score": f1,
+            "MCC": mcc,
+            "TN": tn,
+            "FP": fp,
+            "FN": fn,
+            "TP": tp
+        }
+        metrics_df = pd.DataFrame([metrics_dict])
+        metrics_csv_path = os.path.join(results_dir, "validation_metrics.csv")
+        metrics_df.to_csv(metrics_csv_path, index=False)
+        print(f"Validation metrics saved to {metrics_csv_path}")
+        print("\nConfusion Matrix:")
+        print(f"  TN={tn}  FP={fp}")
+        print(f"  FN={fn}  TP={tp}")
+        print("\nClassification Report:")
+        # Print single binary precision/recall/f1
+        prfs = precision_recall_fscore_support(y_true, y_pred, average='binary', zero_division=0)
+        precision_bin, recall_bin, f1_bin, _ = prfs
+        print(f"Precision (binary): {precision_bin:.3f}")
+        print(f"Recall (binary)   : {recall_bin:.3f}")
+        print(f"F1 Score (binary) : {f1_bin:.3f}")
+    else:
+        print("\nWarning: No valid samples for computing metrics")
     print(f"Total run time: {time.time() - start_time:.2f} seconds")
     print("\n🕒 Profiling Timers:")
     for name, val in timers.items():
