@@ -9,6 +9,7 @@ import re
 import time
 import sys
 import json
+import gc  # Add garbage collection
 
 # --- Tee class for logging to both console and file ---
 class Tee:
@@ -161,11 +162,21 @@ if __name__ == "__main__":
     model_source = args.model_name if args.model_name else model_path
     print (f"device: {device}, model source: {model_source}")
     # --- prepare LLM ---
-    # Clear CUDA cache if available
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    # Clear CUDA cache and run garbage collection before loading model
+    # if torch.cuda.is_available():
+    #     torch.cuda.empty_cache()
+    gc.collect()
+
+    print(f"Loading model from {model_source}...")
     tokenizer = AutoTokenizer.from_pretrained(model_source, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(model_source, trust_remote_code=True, torch_dtype=torch.float16).to(device)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_source,
+        trust_remote_code=True,
+        torch_dtype=torch.float16,
+        device_map="auto",  # Better device management
+        low_cpu_mem_usage=True  # Reduce memory usage during loading
+    ).to(device)
+
     gen_pipeline = pipeline(
         "text-generation",
         model=model,
@@ -176,6 +187,11 @@ if __name__ == "__main__":
 
     results = []
     for _, row in tqdm(preds_df.iterrows(), total=len(preds_df), desc="Admissions"):
+        # Clear memory at the start of each major iteration
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
         demog = row["DEMOG_REC_ID"]
         adm_fn = row["FILENAME"].replace(".txt", "")
         pred_label = row["LABEL"]
@@ -204,7 +220,11 @@ if __name__ == "__main__":
         justification = ""
         violent_text = ""
         for fn in tqdm(other_files, desc=f"Checking files for {demog}", leave=False):
-            t0_overall_iteration_start = time.time()
+            # # Clear memory at the start of each file processing
+            # if torch.cuda.is_available():
+            #     torch.cuda.empty_cache()
+            # gc.collect()
+
             txt_fn = fn + ".txt"
             print (f"Checking {txt_fn} for DEMOG_REC_ID {demog}...")
             path = next((os.path.join(td, txt_fn) for td in text_dirs if os.path.exists(os.path.join(td, txt_fn))), None)
@@ -244,10 +264,16 @@ if __name__ == "__main__":
 
             # --- Profile generation ---
             t0 = time.time()
-            # generate only the continuation without prompt echo
-            raw = gen_pipeline(prompt, max_new_tokens=100, do_sample=False)[0]["generated_text"]
-            print (f"Raw response for {txt_fn}:\n{raw}\n")
+            with torch.no_grad():  # Prevent gradient computation
+                raw = gen_pipeline(prompt, max_new_tokens=100, do_sample=False)[0]["generated_text"]
+            print(f"Raw response for {txt_fn}:\n{raw}\n")
             timers['generate'] += time.time() - t0
+
+            # Free memory after generation
+            del raw
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
 
             # --- Profile parsing ---
             t0 = time.time()
@@ -286,12 +312,22 @@ if __name__ == "__main__":
     # write main results including actual file and justification
     results_df = pd.DataFrame(results)
     results_df = results_df[["DEMOG_REC_ID", "ADMISSION_FILE", "PREDICTION", "ACTUAL", "ACTUAL_FILE", "JUSTIFICATION"]]
-    # Convert ACTUAL to boolean dtype where possible, leave special values as is
-    bool_mask = results_df["ACTUAL"].isin([True, False])
-    results_df.loc[bool_mask, "ACTUAL"] = results_df.loc[bool_mask, "ACTUAL"].astype("boolean")
+
+    # Handle boolean conversion more carefully
+    def convert_to_boolean(val):
+        if isinstance(val, bool):
+            return val
+        elif isinstance(val, str) and val in ["TooLong", "InvalidFormat"]:
+            return val
+        return None
+
+    # Convert values one by one using the safe converter
+    results_df["ACTUAL"] = results_df["ACTUAL"].apply(convert_to_boolean)
+
     results_df.to_csv(out_path, index=False)
-    yes_count = sum(r["ACTUAL"] is True for r in results)
-    no_count = sum(r["ACTUAL"] is False for r in results)
+    # Count only actual boolean True/False values
+    yes_count = sum(1 for x in results_df["ACTUAL"] if x is True)
+    no_count = sum(1 for x in results_df["ACTUAL"] if x is False)
     print(f"Saved {len(results)} rows to {out_path} — actual violence=True: {yes_count}, False: {no_count}")
 
     # שמור קבצים שלא קיבלו תשובה בפורמט תקני או שהיו ארוכים מדי
