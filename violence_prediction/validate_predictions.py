@@ -9,7 +9,6 @@ import re
 import time
 import sys
 import json
-import gc  # Add garbage collection
 
 # --- Tee class for logging to both console and file ---
 class Tee:
@@ -160,9 +159,6 @@ if __name__ == "__main__":
     # allow overriding the local model with a HF hub model name
     model_source = args.model_name if args.model_name else model_path
     print (f"device: {device}, model source: {model_source}")
-    # --- prepare LLM ---
-    # Run garbage collection before loading model
-    gc.collect()
 
     print(f"Loading model from {model_source}...")
     tokenizer = AutoTokenizer.from_pretrained(model_source, trust_remote_code=True)
@@ -183,9 +179,6 @@ if __name__ == "__main__":
 
     results = []
     for _, row in tqdm(preds_df.iterrows(), total=len(preds_df), desc="Admissions"):
-        # Run garbage collection at the start of each major iteration
-        gc.collect()
-
         demog = row["DEMOG_REC_ID"]
         adm_fn = row["FILENAME"].replace(".txt", "")
         pred_label = row["LABEL"]
@@ -264,9 +257,8 @@ if __name__ == "__main__":
             resp_just = parse_justification(raw)
             timers['parse'] += time.time() - t0
 
-            # Free memory after we're done with the raw response
+            # Simply remove the raw response when done
             del raw
-            gc.collect()
 
             print(f"actual label for {txt_fn} is {resp_label}")
             if resp_label is True:
