@@ -207,6 +207,9 @@ if __name__ == "__main__":
         justification = ""
         violent_text = ""
         for fn in tqdm(other_files, desc=f"Checking files for {demog}", leave=False):
+            # Start timing the overall iteration
+            t0_overall_iteration_start = time.time()
+
             txt_fn = fn + ".txt"
             print (f"Checking {txt_fn} for DEMOG_REC_ID {demog}...")
             path = next((os.path.join(td, txt_fn) for td in text_dirs if os.path.exists(os.path.join(td, txt_fn))), None)
