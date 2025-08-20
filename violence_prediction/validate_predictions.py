@@ -219,7 +219,7 @@ if __name__ == "__main__":
             timers['read'] += time.time() - t0
 
             # --- Skip if EMR text is too long ---
-            if len(emr_text) > 3000:
+            if len(emr_text) > 2000:
                 print(f"Skipping {txt_fn} because EMR size is too large ({len(emr_text)} chars)")
                 results.append({
                     "DEMOG_REC_ID": demog,
@@ -245,7 +245,7 @@ if __name__ == "__main__":
             # --- Profile generation ---
             t0 = time.time()
             # generate only the continuation without prompt echo
-            raw = gen_pipeline(prompt, max_new_tokens=50, do_sample=False)[0]["generated_text"]
+            raw = gen_pipeline(prompt, max_new_tokens=100, do_sample=False)[0]["generated_text"]
             print (f"Raw response for {txt_fn}:\n{raw}\n")
             timers['generate'] += time.time() - t0
 
@@ -286,8 +286,9 @@ if __name__ == "__main__":
     # write main results including actual file and justification
     results_df = pd.DataFrame(results)
     results_df = results_df[["DEMOG_REC_ID", "ADMISSION_FILE", "PREDICTION", "ACTUAL", "ACTUAL_FILE", "JUSTIFICATION"]]
-    # Convert ACTUAL to boolean dtype where possible, leave "InvalidFormat" as is
-    results_df["ACTUAL"] = results_df["ACTUAL"].astype("boolean")
+    # Convert ACTUAL to boolean dtype where possible, leave special values as is
+    bool_mask = results_df["ACTUAL"].isin([True, False])
+    results_df.loc[bool_mask, "ACTUAL"] = results_df.loc[bool_mask, "ACTUAL"].astype("boolean")
     results_df.to_csv(out_path, index=False)
     yes_count = sum(r["ACTUAL"] is True for r in results)
     no_count = sum(r["ACTUAL"] is False for r in results)
