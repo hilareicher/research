@@ -2,6 +2,7 @@
 import os
 import pandas as pd
 import argparse
+import numpy as np
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
@@ -239,7 +240,7 @@ if __name__ == "__main__":
             timers['read'] += time.time() - t0
 
             # --- Skip if EMR text is too long ---
-            if len(emr_text) > 3000:
+            if len(emr_text) > 3500:
                 print(f"Skipping {txt_fn} because EMR size is too large ({len(emr_text)} chars)")
                 results.append({
                     "DEMOG_REC_ID": demog,
