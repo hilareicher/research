@@ -8,7 +8,7 @@ import shutil
 from cryptography.fernet import Fernet
 
 # === CONFIG ===
-UPLOAD_URL = "https://bedbf4f0595f.ngrok-free.app/upload"
+UPLOAD_URL = "https://1ba458aa6bd5.ngrok-free.app/upload"
 SOURCE_DIR = "/home/hilareicher.mail.tau.ac.il/research/violence_prediction/results"
 ENCRYPTION_KEY = b'nI_99yH47jBByOL0mFvKkBzN2r8H2BgFNU4FQ01vB2c='
 fernet = Fernet(ENCRYPTION_KEY)

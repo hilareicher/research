@@ -194,6 +194,7 @@ if __name__ == "__main__":
     )
 
     results = []
+    # Move results.append outside the loop - it's currently only saving the last admission
     for _, row in tqdm(preds_df.iterrows(), total=len(preds_df), desc="Admissions"):
         demog = row["DEMOG_REC_ID"]
         adm_fn = row["FILENAME"].replace(".txt", "")
@@ -222,6 +223,8 @@ if __name__ == "__main__":
         actual_file = ""
         justification = ""
         violent_text = ""
+        resp_label = False  # Initialize with a default value
+
         for fn in tqdm(other_files, desc=f"Checking files for {demog}", leave=False):
             # Start timing the overall iteration
             t0_overall_iteration_start = time.time()
@@ -240,7 +243,7 @@ if __name__ == "__main__":
             timers['read'] += time.time() - t0
 
             # --- Skip if EMR text is too long ---
-            if len(emr_text) > 3500:
+            if len(emr_text) > 4000:
                 print(f"Skipping {txt_fn} because EMR size is too large ({len(emr_text)} chars)")
                 results.append({
                     "DEMOG_REC_ID": demog,
@@ -295,15 +298,16 @@ if __name__ == "__main__":
             # Account for misc time for this iteration if we didn't break
             timers['misc'] += time.time() - t0_overall_iteration_start
 
-    results.append({
-        "DEMOG_REC_ID": demog,
-        "ADMISSION_FILE": adm_fn + ".txt",
-        "PREDICTION": pred_label,
-        "ACTUAL": actual if resp_label != "InvalidFormat" else "InvalidFormat",
-        "ACTUAL_FILE": actual_file or "N/A",
-        "JUSTIFICATION": justification,
-        "CONTENT": violent_text
-    })
+        # Store result for this admission (moved inside the main loop)
+        results.append({
+            "DEMOG_REC_ID": demog,
+            "ADMISSION_FILE": adm_fn + ".txt",
+            "PREDICTION": pred_label,
+            "ACTUAL": actual if resp_label != "InvalidFormat" else "InvalidFormat",
+            "ACTUAL_FILE": actual_file or "N/A",
+            "JUSTIFICATION": justification,
+            "CONTENT": violent_text
+        })
 
     # --- write out ---
     out_path = os.path.join(results_dir, "validation_results.csv")
