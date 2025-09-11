@@ -111,6 +111,10 @@ if __name__ == "__main__":
     parser.add_argument("--env", choices=["local","server"], default="local",
                         help="Choose environment: local or server")
     parser.add_argument("--model_name", default=None, help="HuggingFace model name to use")
+    parser.add_argument("--manual_csv", default=None,
+                        help="Path to CSV with a 'manual inspection' column to correct ACTUAL and to drive resume runs")
+    parser.add_argument("--resume_false_positives", action="store_true",
+                        help="Only re-check admissions where prior ACTUAL=Yes but manual inspection=False; skip the previously flagged file(s)")
     args = parser.parse_args()
     start_time = time.time()
 
@@ -163,6 +167,29 @@ if __name__ == "__main__":
     sys.stdout = Tee(orig_stdout, run_log_f)
     sys.stderr = Tee(orig_stderr, run_log_f)
     preds_df = pd.read_csv(os.path.join(script_dir, "predictions.csv"))
+    # --- optional: prepare resume sets from manual CSV ---
+    fp_pairs = set()   # {(DEMOG_REC_ID, ADMISSION_FILE)} admissions to re-check
+    skip_map = {}      # {DEMOG_REC_ID: set([basename_without_ext, ...])} files to skip when scanning follow-up
+    if args.manual_csv and os.path.exists(args.manual_csv):
+        try:
+            manual_df = pd.read_csv(args.manual_csv)
+            # Normalize expected columns
+            if "ADMISSION_FILE" not in manual_df.columns and "ADMISSION_FILE_x" in manual_df.columns:
+                manual_df = manual_df.rename(columns={"ADMISSION_FILE_x": "ADMISSION_FILE"})
+            # Identify rows that were labeled ACTUAL=Yes previously but refuted by manual inspection
+            mask_fp = manual_df["ACTUAL"].astype(str).str.lower().isin(["yes","true"]) & (manual_df["manual inspection"] == False)
+            fps = manual_df.loc[mask_fp, ["DEMOG_REC_ID","ADMISSION_FILE","ACTUAL_FILE"]].dropna(subset=["DEMOG_REC_ID","ADMISSION_FILE"])
+            for _, rr in fps.iterrows():
+                demog = int(rr["DEMOG_REC_ID"]) if pd.notna(rr["DEMOG_REC_ID"]) else None
+                adm_file = str(rr["ADMISSION_FILE"]).strip()
+                fp_pairs.add((demog, adm_file))
+                prev_path = str(rr.get("ACTUAL_FILE", "")).strip()
+                if prev_path and prev_path != "N/A":
+                    base = os.path.splitext(os.path.basename(prev_path))[0]
+                    skip_map.setdefault(demog, set()).add(base)
+            print(f"Loaded manual CSV for resume: {len(fp_pairs)} admissions to re-check")
+        except Exception as e:
+            print(f"Warning: failed to parse manual_csv {args.manual_csv}: {e}")
 
     # --- load metadata ---
     meta_frames = []
@@ -200,6 +227,11 @@ if __name__ == "__main__":
         adm_fn = row["FILENAME"].replace(".txt", "")
         pred_label = row["LABEL"]
 
+        # If resuming, only process admissions that were refuted positives
+        if args.resume_false_positives:
+            if (demog, adm_fn + ".txt") not in fp_pairs:
+                continue
+
         # find admission number for the admission file
         adm_meta = meta_df[
             (meta_df["DEMOG_REC_ID"] == demog) &
@@ -217,6 +249,9 @@ if __name__ == "__main__":
             (meta_df["FILENAME"] != adm_fn)
         ]
         other_files = other_meta["FILENAME"].unique().tolist()
+        # Remove previously flagged (but refuted) file(s) for this patient
+        if demog in skip_map and skip_map[demog]:
+            other_files = [fn for fn in other_files if fn not in skip_map[demog]]
         if args.env == "local":
             other_files = other_files[:30]
         actual = False
@@ -243,7 +278,7 @@ if __name__ == "__main__":
             timers['read'] += time.time() - t0
 
             # --- Skip if EMR text is too long ---
-            if len(emr_text) > 4000:
+            if len(emr_text) > 6000:
                 print(f"Skipping {txt_fn} because EMR size is too large ({len(emr_text)} chars)")
                 results.append({
                     "DEMOG_REC_ID": demog,
@@ -310,7 +345,8 @@ if __name__ == "__main__":
         })
 
     # --- write out ---
-    out_path = os.path.join(results_dir, "validation_results.csv")
+    out_filename = "validation_results_resumed.csv" if args.resume_false_positives else "validation_results.csv"
+    out_path = os.path.join(results_dir, out_filename)
     # write main results including actual file and justification
     results_df = pd.DataFrame(results)
     results_df = results_df[["DEMOG_REC_ID", "ADMISSION_FILE", "PREDICTION", "ACTUAL", "ACTUAL_FILE", "JUSTIFICATION"]]
@@ -341,6 +377,59 @@ if __name__ == "__main__":
     yes_count = sum(1 for x in results_df["ACTUAL"] if x is True)
     no_count = sum(1 for x in results_df["ACTUAL"] if x is False)
     print(f"Saved {len(results)} rows to {out_path} — actual violence=True: {yes_count}, False: {no_count}")
+
+    # --- recompute metrics on full data with manual corrections (prefers full results in results/) ---
+    try:
+        if args.manual_csv and os.path.exists(args.manual_csv):
+            full_results_path = os.path.join(results_dir, "validation_results.csv")
+            eval_path = full_results_path if os.path.exists(full_results_path) else out_path
+            all_df = pd.read_csv(eval_path)
+
+            manual_df = pd.read_csv(args.manual_csv)
+            # Keep only necessary columns if present
+            keep_cols = [c for c in ["DEMOG_REC_ID","ADMISSION_FILE","manual inspection"] if c in manual_df.columns]
+            manual_df = manual_df[keep_cols]
+
+            merged = all_df.merge(manual_df, on=["DEMOG_REC_ID","ADMISSION_FILE"], how="left")
+
+            def corrected_actual(row):
+                act = str(row["ACTUAL"]).strip().lower()
+                mi = row.get("manual inspection")
+                if act in ("yes","true"):
+                    # If manual inspection explicitly False -> flip to No, else keep Yes
+                    return 1 if mi is True else 0
+                return 0  # No/False/other -> 0
+
+            merged["y_true_manual"] = merged.apply(corrected_actual, axis=1).astype(int)
+
+            # Map predictions for strict/relaxed thresholds
+            pred_map_strict  = {"High":1, "Medium":0, "Low":0}
+            pred_map_relaxed = {"High":1, "Medium":1, "Low":0}
+
+            from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef, confusion_matrix
+
+            def compute_all(y_true, pred_map):
+                y_pred = merged["PREDICTION"].map(pred_map).fillna(0).astype(int)
+                tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+                acc = accuracy_score(y_true, y_pred)
+                prec = precision_score(y_true, y_pred, zero_division=0)
+                rec = recall_score(y_true, y_pred, zero_division=0)
+                f1 = f1_score(y_true, y_pred, zero_division=0)
+                spec = tn / (tn + fp) if (tn + fp) > 0 else 0
+                mcc = matthews_corrcoef(y_true, y_pred)
+                return {"Accuracy":acc, "Precision":prec, "Recall":rec, "Specificity":spec, "F1 Score":f1, "MCC":mcc, "TN":tn, "FP":fp, "FN":fn, "TP":tp}
+
+            strict_metrics  = compute_all(merged["y_true_manual"], pred_map_strict)
+            relaxed_metrics = compute_all(merged["y_true_manual"], pred_map_relaxed)
+
+            corrected_path = os.path.join(results_dir, "validation_metrics_corrected.csv")
+            pd.DataFrame([
+                dict(Threshold="Strict", **strict_metrics),
+                dict(Threshold="Relaxed", **relaxed_metrics),
+            ]).to_csv(corrected_path, index=False)
+            print(f"Corrected metrics (manual) saved to {corrected_path}")
+    except Exception as e:
+        print(f"Warning: failed to compute corrected metrics: {e}")
 
     # שמור קבצים שלא קיבלו תשובה בפורמט תקני או שהיו ארוכים מדי
     invalids_df = pd.DataFrame([r for r in results if r["ACTUAL"] in ["InvalidFormat", "TooLong"]])
