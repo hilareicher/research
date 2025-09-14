@@ -191,6 +191,23 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Warning: failed to parse manual_csv {args.manual_csv}: {e}")
 
+    # --- print resume admissions to process (detailed listing) ---
+    if args.resume_false_positives and fp_pairs:
+        # Count how many rows in predictions match the resume keys
+        preds_keys = set((rid, fn) for rid, fn in zip(preds_df["DEMOG_REC_ID_norm"], preds_df["FILENAME_txt"]))
+        to_process = len(preds_keys & fp_pairs)
+        print(f"[resume] Will process {to_process} admissions out of {len(fp_pairs)} requested (based on predictions.csv overlap)")
+        intersection = sorted(list(preds_keys & fp_pairs))
+        if not intersection:
+            print("[resume] No matching admissions found between manual CSV and predictions.csv — nothing to run.")
+        else:
+            print("[resume] Admissions scheduled to run (DEMOG_REC_ID, ADMISSION_FILE):")
+            max_show = 50
+            for i, (rid, afile) in enumerate(intersection[:max_show], 1):
+                print(f"  {i:>3}. {rid}, {afile}")
+            if len(intersection) > max_show:
+                print(f"  ... and {len(intersection) - max_show} more")
+
     # --- load metadata ---
     meta_frames = []
     for d in metadata_dirs:
