@@ -167,6 +167,15 @@ if __name__ == "__main__":
     sys.stdout = Tee(orig_stdout, run_log_f)
     sys.stderr = Tee(orig_stderr, run_log_f)
     preds_df = pd.read_csv(os.path.join(script_dir, "predictions.csv"))
+    # --- normalize IDs and filenames so resume filtering matches ---
+    def _to_int_id(x):
+        try:
+            return int(float(x))
+        except Exception:
+            return None
+    preds_df["DEMOG_REC_ID_norm"] = preds_df["DEMOG_REC_ID"].apply(_to_int_id)
+    # ensure we have a `.txt` filename column to compare with manual CSV
+    preds_df["FILENAME_txt"] = preds_df["FILENAME"].astype(str).str.replace(".txt", "", regex=False) + ".txt"
     # --- optional: prepare resume sets from manual CSV ---
     fp_pairs = set()   # {(DEMOG_REC_ID, ADMISSION_FILE)} admissions to re-check
     skip_map = {}      # {DEMOG_REC_ID: set([basename_without_ext, ...])} files to skip when scanning follow-up
@@ -179,14 +188,18 @@ if __name__ == "__main__":
             # Identify rows that were labeled ACTUAL=Yes previously but refuted by manual inspection
             mask_fp = manual_df["ACTUAL"].astype(str).str.lower().isin(["yes","true"]) & (manual_df["manual inspection"] == False)
             fps = manual_df.loc[mask_fp, ["DEMOG_REC_ID","ADMISSION_FILE","ACTUAL_FILE"]].dropna(subset=["DEMOG_REC_ID","ADMISSION_FILE"])
+            def _basename_txt(p):
+                p = str(p).strip()
+                base = os.path.basename(p)
+                return base if base.endswith(".txt") else base + ".txt"
             for _, rr in fps.iterrows():
-                demog = int(rr["DEMOG_REC_ID"]) if pd.notna(rr["DEMOG_REC_ID"]) else None
-                adm_file = str(rr["ADMISSION_FILE"]).strip()
-                fp_pairs.add((demog, adm_file))
+                demog = _to_int_id(rr["DEMOG_REC_ID"])  # robust cast
+                adm_file_txt = _basename_txt(rr["ADMISSION_FILE"])  # basename + .txt
+                fp_pairs.add((demog, adm_file_txt))
                 prev_path = str(rr.get("ACTUAL_FILE", "")).strip()
                 if prev_path and prev_path != "N/A":
-                    base = os.path.splitext(os.path.basename(prev_path))[0]
-                    skip_map.setdefault(demog, set()).add(base)
+                    prev_base = os.path.splitext(os.path.basename(prev_path))[0]
+                    skip_map.setdefault(demog, set()).add(prev_base)
             print(f"Loaded manual CSV for resume: {len(fp_pairs)} admissions to re-check")
         except Exception as e:
             print(f"Warning: failed to parse manual_csv {args.manual_csv}: {e}")
@@ -240,13 +253,14 @@ if __name__ == "__main__":
     results = []
     # Move results.append outside the loop - it's currently only saving the last admission
     for _, row in tqdm(preds_df.iterrows(), total=len(preds_df), desc="Admissions"):
-        demog = row["DEMOG_REC_ID"]
+        demog = row["DEMOG_REC_ID_norm"]
         adm_fn = row["FILENAME"].replace(".txt", "")
+        adm_txt = adm_fn + ".txt"
         pred_label = row["LABEL"]
 
         # If resuming, only process admissions that were refuted positives
         if args.resume_false_positives:
-            if (demog, adm_fn + ".txt") not in fp_pairs:
+            if (demog, adm_txt) not in fp_pairs:
                 continue
 
         # find admission number for the admission file
@@ -353,7 +367,7 @@ if __name__ == "__main__":
         # Store result for this admission (moved inside the main loop)
         results.append({
             "DEMOG_REC_ID": demog,
-            "ADMISSION_FILE": adm_fn + ".txt",
+            "ADMISSION_FILE": adm_txt,
             "PREDICTION": pred_label,
             "ACTUAL": actual if resp_label != "InvalidFormat" else "InvalidFormat",
             "ACTUAL_FILE": actual_file or "N/A",
